@@ -1,0 +1,7 @@
+pandas~=2.2.3
+numpy~=2.2.3
+datasets~=3.3.2
+tqdm~=4.67.1
+transformers~=4.49.0
+tree-sitter~=0.24.0
+fastparquet~=2024.11.0
