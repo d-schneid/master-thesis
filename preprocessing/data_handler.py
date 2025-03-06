@@ -1,3 +1,5 @@
+import os
+import pickle
 import re
 import tokenize
 from io import StringIO
@@ -12,10 +14,12 @@ from datasets import load_dataset
 
 class DataHandler:
 
-	def __init__(self, dataset='code_search_net', lang='python', tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-7b')):
+	def __init__(self, dataset='code_search_net', lang='python',
+				 tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-7b'), save_dir = 'data/cont_pretrain/'):
 		self.dataset = dataset
 		self.lang = lang
 		self.tokenizer = tokenizer
+		self.save_dir = save_dir
 
 	def read_dataset(self, max_samples_per_split=None):
 		np.random.seed(10)
@@ -126,3 +130,135 @@ class DataHandler:
 		data = pd.DataFrame(rows, columns=['text', 'code'])
 
 		return data
+
+	def convert_tokens_to_strings(self, data):
+		data = data.drop(columns=['ast_leaf_tokens', 'ast_leaf_ranges', 'code_tokens_ranges'])
+		for col in ['code_tokens', 'text_tokens']:
+			data[col] = data[col].progress_apply(lambda l: ','.join(list(map(str, l))))
+
+		return data.sample(frac=1).reset_index(drop=True)
+
+	def get_lr_path(self, leaf):
+		path = [leaf]
+		while path[-1].parent is not None:
+			path.append(path[-1].parent)
+
+		return path
+
+	def get_ll_sim(self, lr_path1, lr_path2):
+		common = 1
+		for i in range(2, min(len(lr_path1), len(lr_path2)) + 1):
+			if lr_path1[-i] == lr_path2[-i]:
+				common += 1
+			else:
+				break
+
+		return common * common / (len(lr_path1) * len(lr_path2))
+
+	def get_ast_lr_paths_and_ll_sim(self, data):
+		ll_sims = []
+		lr_paths = []
+		all_node_types = set()
+
+		for i, row in tqdm(enumerate(data.itertuples())):
+			num_ast_leaves = min(len(row.ast_leaves), 512)
+			curr_lr_paths = [self.get_lr_path(leaf) for leaf in row.ast_leaves]
+			curr_ll_sims = np.ones((num_ast_leaves, num_ast_leaves))
+
+			for i in range(num_ast_leaves - 1):
+				for j in range(i + 1, num_ast_leaves):
+					curr_ll_sims[i, j] = curr_ll_sims[j, i] = self.get_ll_sim(curr_lr_paths[i], curr_lr_paths[j])
+
+			ll_sims.append(';'.join([','.join(list(map(str, row))) for row in curr_ll_sims]))
+			lr_paths.append([[node.type for node in path] for path in curr_lr_paths])
+			all_node_types.update(set(np.concatenate(lr_paths[-1])))
+
+		data.drop(columns=['ast_leaves'], inplace=True)
+		data['ll_sims'] = ll_sims
+		data['lr_paths_types'] = lr_paths
+
+		return all_node_types
+
+	def process_dfg_edges(self, data):
+		dfg_node_code_token_idxs = []
+		dfg_edges = []
+
+		for row in tqdm(data.itertuples()):
+			if len(row.dfg_edges) > 0:
+				dfg_nodes = sorted(list(set(np.concatenate([[left] + right for left, right in row.dfg_edges]))))
+			else:
+				dfg_nodes = []
+
+			dfg_node_to_idx = {k: i for i, k in enumerate(dfg_nodes)}
+			dfg_node_code_token_idxs.append([row.ast_leaf_code_token_idxs[i] for i in dfg_nodes])
+			dfg_edges.append([(dfg_node_to_idx[left], [dfg_node_to_idx[r] for r in right]) for left, right in row.dfg_edges])
+
+		data['dfg_edges'] = dfg_edges
+		data['dfg_node_code_token_idxs'] = dfg_node_code_token_idxs
+
+	def store_preprocessed_data(self, data, num_rows_per_file):
+		# do memory intensive part in chunks
+		os.makedirs(self.save_dir, exist_ok=True)
+		all_node_types = set()
+
+		for start in range(0, len(data), num_rows_per_file):
+			chunk_data = data.iloc[start:start + num_rows_per_file].copy()  # copy so that edits are not on data
+			chunk_node_types = self.get_ast_lr_paths_and_ll_sim(chunk_data)
+			all_node_types.update(chunk_node_types)
+			self.process_dfg_edges(chunk_data)
+			chunk_data = chunk_data[['code_tokens', 'text_tokens', 'ast_leaf_code_token_idxs', 'll_sims',
+									 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']]
+
+			for col in ['ast_leaf_code_token_idxs', 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']:
+				chunk_data[col] = chunk_data[col].apply(str)
+			chunk_data.to_parquet(self.save_dir + 'from_' + str(start) + '.parquet', engine='fastparquet', row_group_offsets=100)
+
+		return all_node_types
+
+	def parse_list_of_lists(self, s, type_=int):
+		list_of_lists = s[1:-2].split('], ')
+		if type_ == str:
+			list_of_lists = [[t[1:-1].replace('\\n', '\n').replace('\\\\', '\\') for t in x[1:].split(', ')] for x in list_of_lists]
+		elif type_ == int:
+			list_of_lists = [[int(t) for t in x[1:].split(', ')] for x in list_of_lists]
+		else:
+			raise Exception('Unknown value for type_')
+		return list_of_lists
+
+	def convert_node_types_to_indices(self, all_node_types):
+		all_node_types = sorted(list(all_node_types))
+		node_type_to_idx = {t: i for i, t in enumerate(all_node_types)}
+		pickle.dump(all_node_types, open(self.save_dir + 'all_node_types.pkl', 'wb'))
+
+		for filename in tqdm(os.listdir(self.save_dir)):
+			if filename.startswith('from_'):
+				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
+				chunk_data['lr_paths_types'] = chunk_data['lr_paths_types'].apply(lambda s: str([[node_type_to_idx[t] for t in path]
+																							 for path in self.parse_list_of_lists(s, type_=str)]))
+				chunk_data.to_parquet(self.save_dir + filename, engine='fastparquet', row_group_offsets=100)
+
+	def upper_triangle(self, ll_sims):
+		rows = ll_sims.split(';')[:-1]
+		ll_sims = ''
+		for i, row in enumerate(rows):
+			ll_sims += ','.join(row.split(',')[i + 1:]) + ';'
+		return ll_sims[:-1]
+
+	def reduce_ll_sims(self):
+		# Reduce memory taken by ll_sims column by storing only upper triangles w/o diagonals
+		pbar = tqdm(os.listdir(self.save_dir))
+		for filename in pbar:
+			pbar.set_description(filename)
+			if filename.startswith('from_'):
+				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
+				chunk_data['ll_sims'] = chunk_data['ll_sims'].apply(self.upper_triangle)
+				chunk_data.to_parquet(self.save_dir + filename, engine='fastparquet', row_group_offsets=100)
+
+	def get_concat_stored_data(self):
+		data = []
+		for filename in tqdm(os.listdir(self.save_dir)):
+			if filename.startswith('from_'):
+				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
+				data.append(chunk_data)
+
+		return pd.concat(data)

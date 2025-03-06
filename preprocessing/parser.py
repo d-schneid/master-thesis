@@ -3,7 +3,6 @@ import numpy as np
 from transformers import AutoTokenizer
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser as TSParser
-from .dfg import dfg_python
 from .dfg_parser import DfgParser
 
 
@@ -146,63 +145,3 @@ class Parser:
 				ast_leaf_token_idxs[-1].append(curr_leaf_token_idxs)
 
 		data['ast_leaf_code_token_idxs'] = ast_leaf_token_idxs
-
-	def get_lr_path(self, leaf):
-		path = [leaf]
-		while path[-1].parent is not None:
-			path.append(path[-1].parent)
-		return path
-
-	def get_ll_sim(self, p1, p2):
-		common = 1
-		for i in range(2, min(len(p1), len(p2)) + 1):
-			if p1[-i] == p2[-i]:
-				common += 1
-			else:
-				break
-		return common * common / (len(p1) * len(p2))
-
-	def get_ast_lr_paths_and_ll_sim(self, data):
-		sims = []
-		lr_paths = []
-		all_node_types = set()
-		for i, row in tqdm(enumerate(data.itertuples())):
-			L = min(len(row.ast_leaves), 512)
-			curr_paths = [self.get_lr_path(leaf) for leaf in row.ast_leaves]
-			curr_sims = np.ones((L, L))
-			for i in range(L - 1):
-				for j in range(i + 1, L):
-					curr_sims[i, j] = curr_sims[j, i] = self.get_ll_sim(curr_paths[i], curr_paths[j])
-			sims.append(';'.join([','.join(list(map(str, row))) for row in curr_sims]))
-			lr_paths.append([[node.type for node in path] for path in curr_paths])
-			all_node_types.update(set(np.concatenate(lr_paths[-1])))
-		data.drop(columns=['ast_leaves'], inplace=True)
-		data['ll_sims'] = sims
-		data['lr_paths_types'] = lr_paths
-
-		return all_node_types
-
-	def process_dfg_edges(self, data):
-		dfg_node_code_token_idxs = []
-		dfg_edges = []
-		for row in tqdm(data.itertuples()):
-			if len(row.dfg_edges) > 0:
-				nodes = sorted(list(set(np.concatenate([[left] + right for left, right in row.dfg_edges]))))
-			else:
-				nodes = []
-			node_to_idx = {k: i for i, k in enumerate(nodes)}
-			dfg_node_code_token_idxs.append([row.ast_leaf_code_token_idxs[i] for i in nodes])
-			dfg_edges.append([(node_to_idx[left], [node_to_idx[r] for r in right]) for left, right in row.dfg_edges])
-		data['dfg_edges'] = dfg_edges
-		data['dfg_node_code_token_idxs'] = dfg_node_code_token_idxs
-
-	def parse_list_of_lists(self, s, type_=int):
-		list_of_lists = s[1:-2].split('], ')
-		if type_ == str:
-			list_of_lists = [[t[1:-1].replace('\\n', '\n').replace('\\\\', '\\') for t in x[1:].split(', ')] \
-							 for x in list_of_lists]
-		elif type_ == int:
-			list_of_lists = [[int(t) for t in x[1:].split(', ')] for x in list_of_lists]
-		else:
-			raise Exception('Unknown value for type_')
-		return list_of_lists
