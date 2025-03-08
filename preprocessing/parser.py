@@ -27,8 +27,7 @@ class Parser:
 		ast_tok_start_point = ast_tokens_index[0]
 		ast_tok_end_point = ast_tokens_index[1]
 
-		row_idx = 0
-		col_idx = 1
+		row_idx, col_idx = 0, 1
 		if ast_tok_start_point[row_idx] == ast_tok_end_point[row_idx]:
 			s = code_rows[ast_tok_start_point[row_idx]][ast_tok_start_point[col_idx]:ast_tok_end_point[col_idx]]
 		else:
@@ -60,11 +59,13 @@ class Parser:
 
 		return code_tokens, ast_token_nodes, dfg
 
-	def format_node_ranges(self, code, nodes):
+	def flatten_ast_leaf_ranges(self, code, ast_leaves):
 		line_lens = [len(line) + 1 for line in code.split('\n')]
 		line_starts = [0] + list(np.cumsum(line_lens))
-		return [(line_starts[node.start_point[0]] + node.start_point[1],
-				 line_starts[node.end_point[0]] + node.end_point[1]) for node in nodes]
+		row_idx, col_idx = 0, 1
+
+		return [(line_starts[ast_leaf.start_point[row_idx]] + ast_leaf.start_point[col_idx],
+				 line_starts[ast_leaf.end_point[row_idx]] + ast_leaf.end_point[col_idx]) for ast_leaf in ast_leaves]
 
 	def tokenize_codes_texts(self, texts, batch_size=1024):
 		tokenized_texts = []
@@ -79,7 +80,7 @@ class Parser:
 			curr_code_tokens, curr_ast_leaves, curr_dfg_edges = self.extract_structure(row.code)
 			ast_leaf_tokens.append(curr_code_tokens)
 			ast_leaves.append(curr_ast_leaves)
-			ast_leaf_ranges.append(self.format_node_ranges(row.code, curr_ast_leaves))
+			ast_leaf_ranges.append(self.flatten_ast_leaf_ranges(row.code, curr_ast_leaves))
 			dfg_edges.append(curr_dfg_edges)
 
 		data['ast_leaves'] = ast_leaves  # list of leaf nodes
@@ -87,35 +88,35 @@ class Parser:
 		data['ast_leaf_tokens'] = ast_leaf_tokens  # list of code substrings corresponding to each leaf
 		data['ast_leaf_ranges'] = ast_leaf_ranges  # list of (start,end) in code for each leaf node
 
-	def get_code_tokens_ranges(self, data):
+	def add_code_tokens_ranges(self, data):
 		pbar = tqdm(data.itertuples())
 		ranges = []
 
 		for row in pbar:
-			code_tokens = [self.tokenizer.decode(ct) for ct in row.code_tokens] # [1:-1] 1:-1 to remove <s> and </s>
-			code2 = ''.join(code_tokens)  # misses some spaces that are in row.code
+			decoded_code_tokens = [self.tokenizer.decode(ct) for ct in row.code_tokens] # [1:-1] 1:-1 to remove <s> and </s>
+			decoded_code = ''.join(decoded_code_tokens)  # misses some spaces that are in row.code
 			code = row.code
 
-			# map each position in code2 to a position in code
-			code2_to_code = []
+			# map each position in decoded_code to a position in code
+			decoded_code_to_code = []
 			j = 0
-			for i in range(len(code2)):
-				if code2[i] == code[j]:
-					code2_to_code.append(j)
+			for i in range(len(decoded_code)):
+				if decoded_code[i] == code[j]:
+					decoded_code_to_code.append(j)
 					j += 1
-				elif code2[i] == code[j + 1]:  # if code2 missed a space
-					code2_to_code.append(j + 1)
+				elif decoded_code[i] == code[j + 1]:  # if code2 missed a space
+					decoded_code_to_code.append(j + 1)
 					j += 2
 				else:
-					raise Exception('Character "' + code2[i] + '" from tokenized code not found in code.')
+					raise Exception('Character "' + decoded_code[i] + '" from tokenized code not found in code.')
 
 			# map each code token to a range in code
-			code2_idx = 0
+			decoded_code_idx = 0
 			curr_ranges = []
-			for ct in code_tokens:
-				s, e = code2_idx, code2_idx + len(ct)
-				code2_idx = e
-				curr_ranges.append((min(code2_to_code[s:e]), 1 + max(code2_to_code[s:e])))
+			for ct in decoded_code_tokens:
+				s, e = decoded_code_idx, decoded_code_idx + len(ct)
+				decoded_code_idx = e
+				curr_ranges.append((min(decoded_code_to_code[s:e]), 1 + max(decoded_code_to_code[s:e])))
 			ranges.append(curr_ranges)  # first [None] and last [None] for <s> and </s>
 
 		data['code_tokens_ranges'] = ranges
@@ -123,25 +124,25 @@ class Parser:
 	def overlap(self, s1, e1, s2, e2):
 		return s1 <= s2 < e1 or s2 <= s1 < e2
 
-	def get_leaf_code_token_indices(self, data):
-		ast_leaf_token_idxs = []
+	def map_ast_leaf_code_token_indices(self, data):
+		ast_leaf_code_token_idxs = []
 		for row in tqdm(data.itertuples()):
-			j = 0
-			ast_leaf_token_idxs.append([])
+			curr_code_token_idx = 0
+			ast_leaf_code_token_idxs.append([])
 			code_tokens_last_idx = len(row.code_tokens) - 1
 			for s, e in row.ast_leaf_ranges:
 				if s == e:  # there are leaves with start_point=end_point
-					ast_leaf_token_idxs[-1].append([])
+					ast_leaf_code_token_idxs[-1].append([])
 					continue
-				while not (self.overlap(s, e, row.code_tokens_ranges[j][0], row.code_tokens_ranges[j][1])):
-					j += 1
-				jj = j
+				while not (self.overlap(s, e, row.code_tokens_ranges[curr_code_token_idx][0], row.code_tokens_ranges[curr_code_token_idx][1])):
+					curr_code_token_idx += 1
+				overlapping_code_token_idx = curr_code_token_idx
 				curr_leaf_token_idxs = []
-				while self.overlap(s, e, row.code_tokens_ranges[jj][0], row.code_tokens_ranges[jj][1]):
-					curr_leaf_token_idxs.append(jj)
-					jj += 1
-					if jj > code_tokens_last_idx:
+				while self.overlap(s, e, row.code_tokens_ranges[overlapping_code_token_idx][0], row.code_tokens_ranges[overlapping_code_token_idx][1]):
+					curr_leaf_token_idxs.append(overlapping_code_token_idx)
+					overlapping_code_token_idx += 1
+					if overlapping_code_token_idx > code_tokens_last_idx:
 						break
-				ast_leaf_token_idxs[-1].append(curr_leaf_token_idxs)
+				ast_leaf_code_token_idxs[-1].append(curr_leaf_token_idxs)
 
-		data['ast_leaf_code_token_idxs'] = ast_leaf_token_idxs
+		data['ast_leaf_code_token_idxs'] = ast_leaf_code_token_idxs

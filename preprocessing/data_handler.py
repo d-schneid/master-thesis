@@ -146,7 +146,7 @@ class DataHandler:
 		return path
 
 	def get_ll_sim(self, lr_path1, lr_path2):
-		common = 1
+		common = 1 # root is always common
 		for i in range(2, min(len(lr_path1), len(lr_path2)) + 1):
 			if lr_path1[-i] == lr_path2[-i]:
 				common += 1
@@ -155,7 +155,7 @@ class DataHandler:
 
 		return common * common / (len(lr_path1) * len(lr_path2))
 
-	def get_ast_lr_paths_and_ll_sim(self, data):
+	def add_ast_lr_paths_and_ll_sim(self, data):
 		ll_sims = []
 		lr_paths = []
 		all_node_types = set()
@@ -179,7 +179,7 @@ class DataHandler:
 
 		return all_node_types
 
-	def process_dfg_edges(self, data):
+	def map_dfg_node_code_token_idices(self, data):
 		dfg_node_code_token_idxs = []
 		dfg_edges = []
 
@@ -203,14 +203,15 @@ class DataHandler:
 
 		for start in range(0, len(data), num_rows_per_file):
 			chunk_data = data.iloc[start:start + num_rows_per_file].copy()  # copy so that edits are not on data
-			chunk_node_types = self.get_ast_lr_paths_and_ll_sim(chunk_data)
+			chunk_node_types = self.add_ast_lr_paths_and_ll_sim(chunk_data)
 			all_node_types.update(chunk_node_types)
-			self.process_dfg_edges(chunk_data)
+			self.map_dfg_node_code_token_idices(chunk_data)
 			chunk_data = chunk_data[['code_tokens', 'text_tokens', 'ast_leaf_code_token_idxs', 'll_sims',
 									 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']]
 
 			for col in ['ast_leaf_code_token_idxs', 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']:
 				chunk_data[col] = chunk_data[col].apply(str)
+
 			chunk_data.to_parquet(self.save_dir + 'from_' + str(start) + '.parquet', engine='fastparquet', row_group_offsets=100)
 
 		return all_node_types
@@ -233,8 +234,8 @@ class DataHandler:
 		for filename in tqdm(os.listdir(self.save_dir)):
 			if filename.startswith('from_'):
 				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
-				chunk_data['lr_paths_types'] = chunk_data['lr_paths_types'].apply(lambda s: str([[node_type_to_idx[t] for t in path]
-																							 for path in self.parse_list_of_lists(s, type_=str)]))
+				chunk_data['lr_paths_types'] = chunk_data['lr_paths_types'].apply(lambda lr_path_types: str([[node_type_to_idx[node_type] for node_type in lr_path]
+																											 for lr_path in self.parse_list_of_lists(lr_path_types, type_=str)]))
 				chunk_data.to_parquet(self.save_dir + filename, engine='fastparquet', row_group_offsets=100)
 
 	def upper_triangle(self, ll_sims):
