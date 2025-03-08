@@ -7,6 +7,7 @@ class DfgParser:
 		self.while_statement = ['while_statement']
 		self.do_first_statement = ['for_in_clause']
 		self.def_statement = ['default_parameter']
+		self.keyword_argument = ['keyword_argument']
 
 	def tree_to_variable_index(self, root_node, ast_tok_index_to_code_tok):
 		if (len(root_node.children) == 0 or root_node.type == 'string') and root_node.type != 'comment':
@@ -22,18 +23,19 @@ class DfgParser:
 				code_tokens += self.tree_to_variable_index(child, ast_tok_index_to_code_tok)
 			return code_tokens
 
-	def parse_leave(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_leave(self, root_node, ast_tok_index_to_code_tok, states, no_states):
 		idx, code_tok = ast_tok_index_to_code_tok[(root_node.start_point, root_node.end_point)]
-		if root_node.type == code_tok:
+		if root_node.type.lower() == code_tok.lower():
 			return [], states
 		elif code_tok in states:
 			return [(code_tok, idx, 'comesFrom', [code_tok], states[code_tok].copy())], states
+		elif root_node.type == 'identifier' and no_states:
+			if root_node.type == 'identifier': return [(code_tok, idx, 'comesFrom', [], [])], states
 		else:
-			if root_node.type == 'identifier':
-				states[code_tok] = [idx]
+			if root_node.type == 'identifier': states[code_tok] = [idx]
 			return [(code_tok, idx, 'comesFrom', [], [])], states
 
-	def parse_def_statement(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_def_statement(self, root_node, ast_tok_index_to_code_tok, states, no_states):
 		name = root_node.child_by_field_name('name')
 		value = root_node.child_by_field_name('value')
 		dfg = []
@@ -49,7 +51,7 @@ class DfgParser:
 		else:
 			name_indexs = self.tree_to_variable_index(name, ast_tok_index_to_code_tok)
 			value_indexs = self.tree_to_variable_index(value, ast_tok_index_to_code_tok)
-			temp, states = self.parse_dfg_python(value, ast_tok_index_to_code_tok, states)
+			temp, states = self.parse_dfg_python(value, ast_tok_index_to_code_tok, states, no_states)
 			dfg += temp
 			for index1 in name_indexs:
 				idx1, code1 = ast_tok_index_to_code_tok[index1]
@@ -59,10 +61,13 @@ class DfgParser:
 				states[code1] = [idx1]
 			return sorted(dfg, key=lambda x: x[1]), states
 
-	def parse_assignment(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_assignment(self, root_node, ast_tok_index_to_code_tok, states, no_states):
 		if root_node.type == 'for_in_clause':
 			right_nodes = [root_node.children[-1]]
 			left_nodes = [root_node.child_by_field_name('left')]
+		elif root_node.type == 'keyword_argument':
+			left_nodes = [root_node.children[0]]
+			right_nodes = [root_node.children[-1]]
 		else:
 			if root_node.child_by_field_name('right') is None:
 				return [], states
@@ -78,7 +83,7 @@ class DfgParser:
 
 		dfg = []
 		for node in right_nodes:
-			temp, states = self.parse_dfg_python(node, ast_tok_index_to_code_tok, states)
+			temp, states = self.parse_dfg_python(node, ast_tok_index_to_code_tok, states, no_states=True)
 			dfg += temp
 
 		for left_node, right_node in zip(left_nodes, right_nodes):
@@ -94,7 +99,7 @@ class DfgParser:
 
 		return sorted(dfg, key=lambda x: x[1]), states
 
-	def parse_if_statement(self, states, root_node, ast_tok_index_to_code_tok):
+	def parse_if_statement(self, states, root_node, ast_tok_index_to_code_tok, no_states):
 		dfg = []
 		current_states = states.copy()
 		others_states = []
@@ -106,10 +111,10 @@ class DfgParser:
 			if 'else' in child.type:
 				tag = True
 			if child.type not in ['elif_clause', 'else_clause']:
-				temp, current_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, current_states)
+				temp, current_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, current_states, no_states)
 				dfg += temp
 			else:
-				temp, new_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states)
+				temp, new_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states, no_states)
 				dfg += temp
 				others_states.append(new_states)
 
@@ -130,9 +135,9 @@ class DfgParser:
 
 		return sorted(dfg, key=lambda x: x[1]), new_states
 
-	def parse_for_statement(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_for_statement(self, root_node, ast_tok_index_to_code_tok, states, no_states):
 		dfg = []
-		for i in range(2):
+		for i in range(1):
 			right_nodes = [x for x in root_node.child_by_field_name('right').children if x.type != ',']
 			left_nodes = [x for x in root_node.child_by_field_name('left').children if x.type != ',']
 			if len(right_nodes) != len(left_nodes) or not any(node.type == "identifier" for node in right_nodes):
@@ -144,7 +149,7 @@ class DfgParser:
 				right_nodes = [root_node.child_by_field_name('right')]
 
 			for node in right_nodes:
-				temp, states = self.parse_dfg_python(node, ast_tok_index_to_code_tok, states)
+				temp, states = self.parse_dfg_python(node, ast_tok_index_to_code_tok, states, no_states)
 				dfg += temp
 
 			for left_node, right_node in zip(left_nodes, right_nodes):
@@ -162,7 +167,7 @@ class DfgParser:
 				dfg += temp
 
 			if root_node.children[-1].type == "block":
-				temp, states = self.parse_dfg_python(root_node.children[-1], ast_tok_index_to_code_tok, states)
+				temp, states = self.parse_dfg_python(root_node.children[-1], ast_tok_index_to_code_tok, states, no_states)
 				dfg += temp
 
 		dic = {}
@@ -177,11 +182,11 @@ class DfgParser:
 
 		return sorted(dfg, key=lambda x: x[1]), states
 
-	def parse_while_statement(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_while_statement(self, root_node, ast_tok_index_to_code_tok, states, no_states):
 		dfg = []
 		for i in range(2):
 			for child in root_node.children:
-				temp, states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states)
+				temp, states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states, no_states)
 				dfg += temp
 
 		dic = {}
@@ -196,33 +201,36 @@ class DfgParser:
 
 		return sorted(dfg, key=lambda x: x[1]), states
 
-	def parse_other(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_other(self, root_node, ast_tok_index_to_code_tok, states, no_states):
+		if root_node.type == 'call': no_states = True
 		dfg = []
+
 		for child in root_node.children:
 			if child.type in self.do_first_statement:
-				temp, states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states)
+				temp, states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states, no_states)
 				dfg += temp
+
 		for child in root_node.children:
 			if child.type not in self.do_first_statement:
-				temp, states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states)
+				temp, states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, states, no_states)
 				dfg += temp
 
 		return sorted(dfg, key=lambda x: x[1]), states
 
-	def parse_dfg_python(self, root_node, ast_tok_index_to_code_tok, states):
+	def parse_dfg_python(self, root_node, ast_tok_index_to_code_tok, states, no_states=False):
 		states = states.copy()
 
 		if (len(root_node.children) == 0 or root_node.type == 'string') and root_node.type != 'comment':
-			return self.parse_leave(root_node, ast_tok_index_to_code_tok, states)
+			return self.parse_leave(root_node, ast_tok_index_to_code_tok, states, no_states)
 		elif root_node.type in self.def_statement:
-			return self.parse_def_statement(root_node, ast_tok_index_to_code_tok, states)
-		elif root_node.type in self.assignment:
-			return self.parse_assignment(root_node, ast_tok_index_to_code_tok, states)
+			return self.parse_def_statement(root_node, ast_tok_index_to_code_tok, states, no_states)
+		elif root_node.type in self.assignment or root_node.type in self.keyword_argument:
+			return self.parse_assignment(root_node, ast_tok_index_to_code_tok, states, no_states)
 		elif root_node.type in self.if_statement:
-			return self.parse_if_statement(states, root_node, ast_tok_index_to_code_tok)
+			return self.parse_if_statement(states, root_node, ast_tok_index_to_code_tok, no_states)
 		elif root_node.type in self.for_statement:
-			return self.parse_for_statement(root_node, ast_tok_index_to_code_tok, states)
+			return self.parse_for_statement(root_node, ast_tok_index_to_code_tok, states, no_states)
 		elif root_node.type in self.while_statement:
-			return self.parse_while_statement(root_node, ast_tok_index_to_code_tok, states)
+			return self.parse_while_statement(root_node, ast_tok_index_to_code_tok, states, no_states)
 		else:
-			return self.parse_other(root_node, ast_tok_index_to_code_tok, states)
+			return self.parse_other(root_node, ast_tok_index_to_code_tok, states, no_states)
