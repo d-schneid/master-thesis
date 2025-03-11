@@ -9,6 +9,7 @@ class DfgParser:
 		self.def_statement = ['default_parameter']
 		self.keyword_argument = ['keyword_argument']
 		self.lambda_ = ['lambda']
+		self.comprehension = ['dictionary_comprehension', 'list_comprehension', 'lambda']
 
 	def reduce_dfg_edges(self, dfg):
 		dic = {}
@@ -227,6 +228,23 @@ class DfgParser:
 
 		return sorted(dfg, key=lambda x: x[1]), states
 
+	def parse_comprehension(self, root_node, ast_tok_index_to_code_tok, states, no_new_states):
+		dfg = []
+		current_states = states.copy()
+
+		for child in root_node.children:
+			if child.type in self.do_first_statement:
+				temp, current_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, current_states, no_new_states=False)
+				dfg += temp
+
+		for child in root_node.children:
+			if child.type not in self.do_first_statement:
+				curr_no_new_states = True if child.type == 'pair' else False
+				temp, current_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, current_states, no_new_states=curr_no_new_states)
+				dfg += temp
+
+		return sorted(dfg, key=lambda x: x[1]), states
+
 	def parse_other(self, root_node, ast_tok_index_to_code_tok, states, no_new_states):
 		if root_node.type == 'call': no_new_states = True # a call can never declare new variables
 		dfg = []
@@ -258,7 +276,9 @@ class DfgParser:
 			return self.parse_for_statement(root_node, ast_tok_index_to_code_tok, states, no_new_states)
 		elif root_node.type in self.while_statement:
 			return self.parse_while_statement(root_node, ast_tok_index_to_code_tok, states, no_new_states)
-		elif root_node.type in self.lambda_:
-			return self.parse_lambda(root_node, ast_tok_index_to_code_tok, states, no_new_states)
+		#elif root_node.type in self.lambda_:
+		#	return self.parse_lambda(root_node, ast_tok_index_to_code_tok, states, no_new_states)
+		elif root_node.type in self.comprehension:
+			return self.parse_comprehension(root_node, ast_tok_index_to_code_tok, states, no_new_states)
 		else:
 			return self.parse_other(root_node, ast_tok_index_to_code_tok, states, no_new_states)
