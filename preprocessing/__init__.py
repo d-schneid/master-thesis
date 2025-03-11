@@ -1,2 +1,2 @@
-from .parser import Parser
-from .data_handler import DataHandler
+from preprocessing.parser import Parser
+from preprocessing.data_handler import DataHandler
