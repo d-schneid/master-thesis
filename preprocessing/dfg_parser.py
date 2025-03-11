@@ -8,7 +8,6 @@ class DfgParser:
 		self.do_first_statement = ['for_in_clause']
 		self.def_statement = ['default_parameter']
 		self.keyword_argument = ['keyword_argument']
-		self.lambda_ = ['lambda']
 		self.comprehension = ['dictionary_comprehension', 'list_comprehension', 'lambda']
 
 	def reduce_dfg_edges(self, dfg):
@@ -63,10 +62,10 @@ class DfgParser:
 		# calling the variable and not to a variable declared in the code
 		elif code_tok in states and (root_node.prev_sibling is None or root_node.prev_sibling.type != '.'):
 			return [(code_tok, idx, 'comesFrom', [code_tok], states[code_tok].copy())], states
-		elif root_node.type == 'identifier' and no_new_states and root_node.parent.type != 'lambda_parameters':
+		elif root_node.type == 'identifier' and no_new_states:
 			if root_node.type == 'identifier': return [(code_tok, idx, 'comesFrom', [], [])], states
 		else:
-			if root_node.type == 'identifier': states[code_tok] = [idx]
+			if root_node.type == 'identifier' and (root_node.prev_sibling is None or root_node.prev_sibling.type != '.'): states[code_tok] = [idx]
 			return [(code_tok, idx, 'comesFrom', [], [])], states
 
 	def parse_def_statement(self, root_node, ast_tok_index_to_code_tok, states, no_new_states):
@@ -128,7 +127,7 @@ class DfgParser:
 				idx1, code1 = ast_tok_index_to_code_tok[token1_index]
 				temp.append((code1, idx1, 'computedFrom', [ast_tok_index_to_code_tok[x][1] for x in right_tokens_index],
 							 [ast_tok_index_to_code_tok[x][0] for x in right_tokens_index]))
-				if not no_new_states: states[code1] = [idx1]
+				if not no_new_states and left_node.type != 'attribute': states[code1] = [idx1]
 			dfg += temp
 
 		return sorted(dfg, key=lambda x: x[1]), states
@@ -219,15 +218,6 @@ class DfgParser:
 
 		return sorted(dfg, key=lambda x: x[1]), states
 
-	def parse_lambda(self, root_node, ast_tok_index_to_code_tok, states, no_new_states):
-		dfg = []
-		current_states = states.copy()
-		for child in root_node.children:
-			temp, current_states = self.parse_dfg_python(child, ast_tok_index_to_code_tok, current_states, no_new_states)
-			dfg += temp
-
-		return sorted(dfg, key=lambda x: x[1]), states
-
 	def parse_comprehension(self, root_node, ast_tok_index_to_code_tok, states, no_new_states):
 		dfg = []
 		current_states = states.copy()
@@ -276,8 +266,6 @@ class DfgParser:
 			return self.parse_for_statement(root_node, ast_tok_index_to_code_tok, states, no_new_states)
 		elif root_node.type in self.while_statement:
 			return self.parse_while_statement(root_node, ast_tok_index_to_code_tok, states, no_new_states)
-		#elif root_node.type in self.lambda_:
-		#	return self.parse_lambda(root_node, ast_tok_index_to_code_tok, states, no_new_states)
 		elif root_node.type in self.comprehension:
 			return self.parse_comprehension(root_node, ast_tok_index_to_code_tok, states, no_new_states)
 		else:
