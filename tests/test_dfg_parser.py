@@ -16,6 +16,7 @@ class TestDfgParser(TestCase):
 		ast_tok_index_to_code_tok = {ast_tok_index: (idx, code_tok) for idx, (ast_tok_index, code_tok) in enumerate(zip(ast_tokens_index, code_tokens))}
 		dfg, _ = parser.dfg_parser.parse_dfg_python(tree.root_node, ast_tok_index_to_code_tok, {})
 
+		self.assertGreaterEqual(len(dfg), 1)
 		self.assertEqual(len(expected_dfg), len(dfg))
 		for i, expected in enumerate(expected_dfg):
 			self.assertEqual(expected, dfg[i])
