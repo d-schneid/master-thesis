@@ -1,7 +1,7 @@
 from unittest import TestCase
 from preprocessing.parser import Parser
 
-class TestDfgParser(TestCase):
+class TestAstLeaves(TestCase):
 
 	def _check_code_leaves(self, code, expected_code_leaves):
 		parser = Parser()
@@ -18,7 +18,7 @@ class TestDfgParser(TestCase):
 	def test_simple1(self):
 		code = """def hello_world(do_print=True):
 					hello = "Hello World!"
-	        		if (do_print): print(hello)"""
+					if (do_print): print(hello)"""
 		expected_code_leaves = [
 			('def', 'def'),
 			('hello_world', 'identifier'),
@@ -45,8 +45,8 @@ class TestDfgParser(TestCase):
 
 	def test_simple2(self):
 		code = """def add(a, b):
-			    result = a + b
-			    return result"""
+					result = a + b
+					return result"""
 		expected_code_leaves = [
 			('def', 'def'),
 			('add', 'identifier'),
@@ -68,10 +68,10 @@ class TestDfgParser(TestCase):
 
 	def test_for_loop(self):
 		code = """def sum_list(lst):
-			    total = 0
-			    for num in lst:
-			        total += num
-			    return total"""
+					total = 0
+					for num in lst:
+						total += num
+					return total"""
 		expected_code_leaves = [
 			('def', 'def'),
 			('sum_list', 'identifier'),
@@ -98,11 +98,11 @@ class TestDfgParser(TestCase):
 	def test_while_loop(self):
 		code = """def sum_until_n(n):
 					total = 0
-			        i = 0
-			        while i < n:
-			            total += i
-			            i += 1
-			        return total"""
+					i = 0
+					while i < n:
+						total += i
+						i += 1
+					return total"""
 		expected_code_leaves = [
 			('def', 'def'),
 			('sum_until_n', 'identifier'),
@@ -206,11 +206,11 @@ class TestDfgParser(TestCase):
 	def test_if_else(self):
 		code = """def if_else(dataset, column_names):
 					N = 5
-			        for column_name in column_names:
-			            if N > 0:
-			                print("N is positive")
-			            else:
-			                print("N is non-positive")"""
+					for column_name in column_names:
+						if N > 0:
+							print("N is positive")
+						else:
+							print("N is non-positive")"""
 		expected_code_leaves = [
 			('def', 'def'),
 			('if_else', 'identifier'),

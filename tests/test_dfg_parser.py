@@ -23,8 +23,8 @@ class TestDfgParser(TestCase):
 
 	def test_simple_dfg1(self):
 		code = """def hello_world(do_print=True):
-	    hello = "Hello World!"
-	    if (do_print): print(hello)"""
+					hello = "Hello World!"
+					if (do_print): print(hello)"""
 		self._test_code_structure(code, [
 			('hello_world', 1, 'comesFrom', [], []),
 			('do_print', 3, 'comesFrom', ['True'], [5]),
@@ -37,8 +37,8 @@ class TestDfgParser(TestCase):
 
 	def test_simple_dfg2(self):
 		code = """def add(a, b):
-	    result = a + b
-	    return result"""
+					result = a + b
+					return result"""
 		self._test_code_structure(code, [
 			('add', 1, 'comesFrom', [], []),
 			('a', 3, 'comesFrom', [], []),
@@ -51,10 +51,10 @@ class TestDfgParser(TestCase):
 
 	def test_for_loop(self):
 		code = """def sum_list(lst):
-	    total = 0
-	    for num in lst:
-	        total += num
-	    return total"""
+					total = 0
+					for num in lst:
+						total += num
+					return total"""
 		self._test_code_structure(code, [
 			('sum_list', 1, 'comesFrom', [], []),
 			('lst', 3, 'comesFrom', [], []),
@@ -69,12 +69,12 @@ class TestDfgParser(TestCase):
 
 	def test_while_loop(self):
 		code = """def sum_until_n(n):
-	        total = 0
-	        i = 0
-	        while i < n:
-	            total += i
-	            i += 1
-	        return total"""
+					total = 0
+					i = 0
+					while i < n:
+						total += i
+						i += 1
+					return total"""
 		self._test_code_structure(code, [
 			('sum_until_n', 1, 'comesFrom', [], []),
 			('n', 3, 'comesFrom', [], []),
@@ -93,8 +93,8 @@ class TestDfgParser(TestCase):
 
 	def test_dict_comprehension(self):
 		code = """def dict_comprehension(dataset):
-	        dict_ = {key: dataset.columns[key].fill_value for key in dataset.get_column_names() if dataset.is_masked(key) and dataset.dtype(key).kind != "f"}
-	        return dict_"""
+					dict_ = {key: dataset.columns[key].fill_value for key in dataset.get_column_names() if dataset.is_masked(key) and dataset.dtype(key).kind != "f"}
+					return dict_"""
 		self._test_code_structure(code, [
 			('dict_comprehension', 1, 'comesFrom', [], []),
 			('dataset', 3, 'comesFrom', [], []),
@@ -123,7 +123,7 @@ class TestDfgParser(TestCase):
 
 	def test_list_comprehension(self):
 		code = """def squares(n):
-	    return [i * i for i in range(n)]"""
+					return [i * i for i in range(n)]"""
 		self._test_code_structure(code, [
 			('squares', 1, 'comesFrom', [], []),
 			('n', 3, 'comesFrom', [], []),
@@ -136,12 +136,12 @@ class TestDfgParser(TestCase):
 
 	def test_lambda(self):
 		code = """def lambda(dataset, column_names=None, selection=False):
-		    column_names = column_names or dataset.get_column_names(strings=True)
-		    result = []
-		    for column_name in column_names:
-				max_length = dataset[column_name].apply(lambda x: len(x)).max(selection=selection)
-				result.append(max_length)
-		    return result"""
+					column_names = column_names or dataset.get_column_names(strings=True)
+					result = []
+					for column_name in column_names:
+						max_length = dataset[column_name].apply(lambda x: len(x)).max(selection=selection)
+						result.append(max_length)
+					return result"""
 		self._test_code_structure(code, [
 			('lambda', 1, 'comesFrom', [], []),
 			('dataset', 3, 'comesFrom', [], []),
@@ -177,15 +177,15 @@ class TestDfgParser(TestCase):
 
 	def test_if_else(self):
 		code = """def if_else(dataset, column_names):
-			N = 5
-		    for column_name in column_names:
-        		if column_name in dataset.get_column_names(strings=True):
-            		column = dataset.columns[column_name]
-            		shape = (N,) + column.shape[1:]
-            		dtype = column.dtype
-        		else:
-            		dtype = np.float64().dtype
-            		shape = (N,)"""
+					N = 5
+					for column_name in column_names:
+						if column_name in dataset.get_column_names(strings=True):
+							column = dataset.columns[column_name]
+							shape = (N,) + column.shape[1:]
+							dtype = column.dtype
+						else:
+							dtype = np.float64().dtype
+							shape = (N,)"""
 		self._test_code_structure(code, [
 			('if_else', 1, 'comesFrom', [], []),
 			('dataset', 3, 'comesFrom', [], []),
