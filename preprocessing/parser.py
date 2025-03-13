@@ -14,6 +14,7 @@ class Parser:
 		self.dfg_parser = DfgParser()
 
 	def tree_to_token_nodes(self, root_node):
+		"""Go down each path in the AST to find leaves"""
 		# leave node
 		if (len(root_node.children) == 0 or root_node.type == 'string') and root_node.type != 'comment':
 			return [root_node]
@@ -23,9 +24,9 @@ class Parser:
 				code_tokens += self.tree_to_token_nodes(child)
 			return code_tokens
 
-	def ast_tok_index_to_code_token(self, ast_tokens_index, code_rows):
-		ast_tok_start_point = ast_tokens_index[0]
-		ast_tok_end_point = ast_tokens_index[1]
+	def ast_tok_index_to_code_token(self, ast_tok_index, code_rows):
+		ast_tok_start_point = ast_tok_index[0]
+		ast_tok_end_point = ast_tok_index[1]
 
 		row_idx, col_idx = 0, 1
 		if ast_tok_start_point[row_idx] == ast_tok_end_point[row_idx]:
@@ -36,6 +37,7 @@ class Parser:
 			for i in range(ast_tok_start_point[row_idx] + 1, ast_tok_end_point[row_idx]):
 				s += code_rows[i]
 			s += code_rows[ast_tok_end_point[row_idx]][:ast_tok_end_point[col_idx]]
+
 		return s
 
 	def extract_structure(self, code):
@@ -46,7 +48,7 @@ class Parser:
 		# dfg
 		ast_tokens_index = [(node.start_point, node.end_point) for node in ast_token_nodes]
 		code_rows = code.split('\n')
-		code_tokens = [self.ast_tok_index_to_code_token(x, code_rows) for x in ast_tokens_index]
+		code_tokens = [self.ast_tok_index_to_code_token(ast_tok_index, code_rows) for ast_tok_index in ast_tokens_index]
 		ast_tok_index_to_code_tok = {ast_tok_index: (idx, code_tok) for idx, (ast_tok_index, code_tok) in enumerate(zip(ast_tokens_index, code_tokens))}
 		try:
 			dfg, _ = self.dfg_parser.parse_dfg_python(tree.root_node, ast_tok_index_to_code_tok, {})
@@ -104,7 +106,7 @@ class Parser:
 				if decoded_code[i] == code[j]:
 					decoded_code_to_code.append(j)
 					j += 1
-				elif decoded_code[i] == code[j + 1]:  # if code2 missed a space
+				elif decoded_code[i] == code[j + 1]:  # if decoded_code missed a space
 					decoded_code_to_code.append(j + 1)
 					j += 2
 				else:
@@ -125,6 +127,10 @@ class Parser:
 		return s1 <= s2 < e1 or s2 <= s1 < e2
 
 	def map_ast_leaf_code_token_indices(self, data):
+		""""
+		An AST leaf can correspond to multiple code tokens due to tokenization.
+		This function maps each AST leaf to the corresponding code tokens.
+		"""
 		ast_leaf_code_token_idxs = []
 		for row in tqdm(data.itertuples()):
 			curr_code_token_idx = 0
@@ -134,10 +140,13 @@ class Parser:
 				if s == e:  # there are leaves with start_point=end_point
 					ast_leaf_code_token_idxs[-1].append([])
 					continue
+				# search next code token that corresponds to the current AST leaf
 				while not (self.overlap(s, e, row.code_tokens_ranges[curr_code_token_idx][0], row.code_tokens_ranges[curr_code_token_idx][1])):
 					curr_code_token_idx += 1
+
 				overlapping_code_token_idx = curr_code_token_idx
 				curr_leaf_token_idxs = []
+				# collect all code tokens that correspond to the current AST leaf
 				while self.overlap(s, e, row.code_tokens_ranges[overlapping_code_token_idx][0], row.code_tokens_ranges[overlapping_code_token_idx][1]):
 					curr_leaf_token_idxs.append(overlapping_code_token_idx)
 					overlapping_code_token_idx += 1

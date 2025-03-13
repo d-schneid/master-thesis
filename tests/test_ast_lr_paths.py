@@ -3,10 +3,11 @@ from preprocessing.data_handler import DataHandler
 from preprocessing.parser import Parser
 import pandas as pd
 
+
 class TestAstLrPaths(TestCase):
 
 	def _check_code_leaves(self, code, expected_lr_paths_types):
-		data_handler = DataHandler()
+		data_handler = DataHandler(save_dir='')
 		parser = Parser()
 		_, ast_leaves, _ = parser.extract_structure(code)
 		data = pd.DataFrame()

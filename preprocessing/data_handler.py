@@ -14,12 +14,11 @@ from datasets import load_dataset
 
 class DataHandler:
 
-	def __init__(self, dataset='code_search_net', lang='python',
-				 tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-7b'), save_dir = 'data/cont_pretrain/'):
+	def __init__(self, save_dir, dataset='code_search_net', lang='python', tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-7b')):
+		self.save_dir = save_dir
 		self.dataset = dataset
 		self.lang = lang
 		self.tokenizer = tokenizer
-		self.save_dir = save_dir
 
 	def read_dataset(self, max_samples_per_split=None):
 		np.random.seed(10)
@@ -70,9 +69,10 @@ class DataHandler:
 			line_text = tok[4]
 
 			if start_line > last_lineno:
-				last_col = 0
+				last_col = 0 # start at beginning of new line
 			if start_col > last_col:
-				out += (" " * (start_col - last_col))
+				out += (" " * (start_col - last_col)) # add space between tokens
+
 			# Remove comments:
 			if token_type == tokenize.COMMENT:
 				pass
@@ -91,9 +91,9 @@ class DataHandler:
 			last_lineno = end_line
 
 		temp = []
-		for x in out.split('\n'):
-			if x.strip() != "":
-				temp.append(x)
+		for row in out.split('\n'):
+			if row.strip() != "":
+				temp.append(row)
 		code = '\n'.join(temp)
 
 		pos = 0
@@ -180,6 +180,10 @@ class DataHandler:
 		return all_node_types
 
 	def map_dfg_node_code_token_idices(self, data):
+		""""
+		A DFG node/variable can correspond to multiple code tokens due to tokenization.
+		This function maps each DFG node/variable to the corresponding code tokens.
+		"""
 		dfg_node_code_token_idxs = []
 		dfg_edges = []
 
@@ -190,6 +194,8 @@ class DataHandler:
 				dfg_nodes = []
 
 			dfg_node_to_idx = {k: i for i, k in enumerate(dfg_nodes)}
+			# DFG was built with the indices of AST leaves
+			# Thus, the index of a DFG node can be used to retrieve the corresponding AST leaf and its code tokens
 			dfg_node_code_token_idxs.append([row.ast_leaf_code_token_idxs[i] for i in dfg_nodes])
 			dfg_edges.append([(dfg_node_to_idx[left], [dfg_node_to_idx[r] for r in right]) for left, right in row.dfg_edges])
 
@@ -212,7 +218,7 @@ class DataHandler:
 			for col in ['ast_leaf_code_token_idxs', 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']:
 				chunk_data[col] = chunk_data[col].apply(str)
 
-			chunk_data.to_parquet(self.save_dir + 'from_' + str(start) + '.parquet', engine='fastparquet', row_group_offsets=100)
+			chunk_data.to_parquet(os.path.join(self.save_dir, 'from_' + str(start) + '.parquet'), engine='fastparquet', row_group_offsets=100)
 
 		return all_node_types
 
@@ -229,14 +235,15 @@ class DataHandler:
 	def convert_node_types_to_indices(self, all_node_types):
 		all_node_types = sorted(list(all_node_types))
 		node_type_to_idx = {t: i for i, t in enumerate(all_node_types)}
-		pickle.dump(all_node_types, open(self.save_dir + 'all_node_types.pkl', 'wb'))
+		with open(os.path.join(self.save_dir, 'all_node_types.pkl'), 'wb') as f:
+			pickle.dump(all_node_types, f)
 
 		for filename in tqdm(os.listdir(self.save_dir)):
 			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
+				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
 				chunk_data['lr_paths_types'] = chunk_data['lr_paths_types'].apply(lambda lr_path_types: str([[node_type_to_idx[node_type] for node_type in lr_path]
 																											 for lr_path in self.parse_list_of_lists(lr_path_types, type_=str)]))
-				chunk_data.to_parquet(self.save_dir + filename, engine='fastparquet', row_group_offsets=100)
+				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
 
 	def upper_triangle(self, ll_sims):
 		rows = ll_sims.split(';')[:-1]
@@ -251,15 +258,15 @@ class DataHandler:
 		for filename in pbar:
 			pbar.set_description(filename)
 			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
+				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
 				chunk_data['ll_sims'] = chunk_data['ll_sims'].apply(self.upper_triangle)
-				chunk_data.to_parquet(self.save_dir + filename, engine='fastparquet', row_group_offsets=100)
+				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
 
 	def get_concat_stored_data(self):
 		data = []
 		for filename in tqdm(os.listdir(self.save_dir)):
 			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(self.save_dir + filename, engine='fastparquet')
+				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
 				data.append(chunk_data)
 
 		return pd.concat(data)

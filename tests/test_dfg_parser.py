@@ -1,6 +1,7 @@
 from unittest import TestCase
 from preprocessing.parser import Parser
 
+
 class TestDfgParser(TestCase):
 
 	def _test_code_structure(self, code, expected_dfg):

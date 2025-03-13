@@ -1,6 +1,7 @@
 from unittest import TestCase
 from preprocessing.parser import Parser
 
+
 class TestAstLeaves(TestCase):
 
 	def _check_code_leaves(self, code, expected_code_leaves):
