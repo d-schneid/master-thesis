@@ -1,5 +1,5 @@
 from unittest import TestCase
-from preprocessing.parser import Parser
+from data_preprocessing.parser import Parser
 
 
 class TestDfgParser(TestCase):

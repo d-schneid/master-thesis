@@ -1,5 +1,5 @@
 from unittest import TestCase
-from preprocessing.data_handler import DataHandler
+from data_preprocessing.data_handler import DataHandler
 
 
 class TestDataHandler(TestCase):

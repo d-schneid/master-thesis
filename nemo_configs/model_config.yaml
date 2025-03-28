@@ -1,0 +1,31 @@
+model:
+  vocab_size: 10
+  block_size: 4
+  n_layer: 1
+  n_embd: 32
+  n_head: 4
+  data_path: ../data/pretraining/
+  train_ds:
+    data_path: ../data/pretraining/
+    block_size: 4
+    crop:
+    - 0
+    - 1000000
+    batch_size: 64
+    shuffle: true
+  validation_ds:
+    data_path: ../data/pretraining/
+    block_size: 4
+    crop:
+    - 1000000
+    - 50000
+    batch_size: 4
+    shuffle: false
+  test_ds:
+    data_path: ../data/pretraining/
+    block_size: 4
+    crop:
+    - 1050000
+    - 100000
+    batch_size: 4
+    shuffle: false

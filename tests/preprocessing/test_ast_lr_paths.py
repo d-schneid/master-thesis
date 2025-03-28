@@ -1,6 +1,6 @@
 from unittest import TestCase
-from preprocessing.data_handler import DataHandler
-from preprocessing.parser import Parser
+from data_preprocessing.data_handler import DataHandler
+from data_preprocessing.parser import Parser
 import pandas as pd
 
 

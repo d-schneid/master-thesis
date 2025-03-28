@@ -259,6 +259,7 @@ class DataHandler:
 			pbar.set_description(filename)
 			if filename.startswith('from_'):
 				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
+				print("hello")
 				chunk_data['ll_sims'] = chunk_data['ll_sims'].apply(self.upper_triangle)
 				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
 
