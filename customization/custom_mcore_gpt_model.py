@@ -1,9 +1,13 @@
 from typing import Optional, Literal
 
+from megatron.core import InferenceParams
+from megatron.core.packed_seq_params import PackedSeqParams
+
 from nemo.collections import llm
 from megatron.core.models.gpt import GPTModel as MCoreGPTModel
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.transformer.spec_utils import ModuleSpec
+from torch import Tensor
 
 
 class CustomMCoreGPTModel(MCoreGPTModel):
@@ -45,3 +49,24 @@ class CustomMCoreGPTModel(MCoreGPTModel):
 			scatter_embedding_sequence_parallel=scatter_embedding_sequence_parallel,
 			seq_len_interpolation_factor=seq_len_interpolation_factor,
 		)
+
+	def forward(
+        self,
+        input_ids: Tensor,
+        position_ids: Tensor,
+        attention_mask: Tensor,
+        decoder_input: Tensor = None,
+        labels: Tensor = None,
+        inference_params: InferenceParams = None,
+        packed_seq_params: PackedSeqParams = None,
+        extra_block_kwargs: dict = None,
+        runtime_gather_output: Optional[bool] = None,
+		code_tokens: Tensor = None,
+		text_tokens: Tensor = None,
+		ll_sims: Tensor = None,
+		ast_leaf_code_token_idxs: Tensor = None,
+		lr_paths_types: Tensor = None,
+		dfg_node_code_token_idxs: Tensor = None,
+		dfg_edges: Tensor = None,
+    ) -> Tensor:
+		print(f"Code tokens incoming in Custom MCoreGPTModel: {code_tokens}")

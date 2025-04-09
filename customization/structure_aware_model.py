@@ -38,5 +38,9 @@ class StructureAwareModel(Qwen2Model):
 		dfg_node_code_token_idxs = None,
 		dfg_edges = None,
     ):
-		print(f"Code tokens: {code_tokens}")
-		print(f"Text tokens: {text_tokens}")
+
+		#print(f"Code tokens incoming in Struct Aware Model: {code_tokens}")
+		self.module(input_ids, position_ids, attention_mask, code_tokens=code_tokens, text_tokens=text_tokens,
+					ll_sims=ll_sims, ast_leaf_code_token_idxs=ast_leaf_code_token_idxs,
+					lr_paths_types=lr_paths_types, dfg_node_code_token_idxs=dfg_node_code_token_idxs,
+					dfg_edges=dfg_edges)

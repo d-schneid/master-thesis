@@ -19,13 +19,13 @@ def custom_forward_step(model, batch) -> torch.Tensor:
 	forward_args = {
 		"code_tokens": batch["code_tokens"],
 		"text_tokens": batch["text_tokens"],
-		#"ll_sims": batch["ll_sims"],
-		#"ast_leaf_code_token_idxs": batch["ast_leaf_code_token_idxs"],
-		#"lr_paths_types": batch["lr_paths_types"],
-		#"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
-		#"dfg_edges": batch["dfg_edges"],
+		"ll_sims": batch["ll_sims"],
+		"ast_leaf_code_token_idxs": batch["ast_leaf_code_token_idxs"],
+		"lr_paths_types": batch["lr_paths_types"],
+		"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
+		"dfg_edges": batch["dfg_edges"],
 	}
-	print(f"batch in custom forward step: {batch}")
+	#print(f"batch in custom forward step: {batch}")
 	return model(**forward_args)
 
 
@@ -64,7 +64,7 @@ def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
 	# https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L828-L842
 
 	batch = next(dataloader_iter)
-	print(f"batch in custom data step: {batch}")
+	#print(f"batch in custom data step: {batch}")
 
 	_batch: dict
 	if isinstance(batch, tuple) and len(batch) == 3:
@@ -82,7 +82,8 @@ def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
 		required_host_keys.add('max_seqlen')
 
 	if parallel_state.is_pipeline_first_stage():
-		required_device_keys.update(("code_tokens", "text_tokens"))
+		required_device_keys.update(("code_tokens", "text_tokens", "ll_sims", "ast_leaf_code_token_idxs",
+									 "lr_paths_types", "dfg_node_code_token_idxs", "dfg_edges"))
 	if parallel_state.is_pipeline_last_stage():
 		required_device_keys.update(("labels", "loss_mask"))
 
