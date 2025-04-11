@@ -2,6 +2,7 @@ import os
 import pickle
 import re
 import tokenize
+import ast
 from io import StringIO
 
 import numpy as np
@@ -133,7 +134,7 @@ class DataHandler:
 
 	def convert_tokens_to_strings(self, data):
 		data = data.drop(columns=['ast_leaf_tokens', 'ast_leaf_ranges', 'code_tokens_ranges'])
-		for col in ['code_tokens', 'text_tokens']:
+		for col in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids']:
 			data[col] = data[col].progress_apply(lambda l: ','.join(list(map(str, l))))
 
 		return data.sample(frac=1).reset_index(drop=True)
@@ -212,8 +213,9 @@ class DataHandler:
 			chunk_node_types = self.add_ast_lr_paths_and_ll_sim(chunk_data)
 			all_node_types.update(chunk_node_types)
 			self.map_dfg_node_code_token_idices(chunk_data)
-			chunk_data = chunk_data[['code_tokens', 'text_tokens', 'ast_leaf_code_token_idxs', 'll_sims',
-									 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']]
+			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
+									 'ast_leaf_code_token_idxs', 'll_sims', 'lr_paths_types',
+									 'dfg_node_code_token_idxs', 'dfg_edges']]
 
 			for col in ['ast_leaf_code_token_idxs', 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']:
 				chunk_data[col] = chunk_data[col].apply(str)
@@ -238,12 +240,18 @@ class DataHandler:
 		with open(os.path.join(self.save_dir, 'all_node_types.pkl'), 'wb') as f:
 			pickle.dump(all_node_types, f)
 
+		global_max_ast_depth = -1
 		for filename in tqdm(os.listdir(self.save_dir)):
 			if filename.startswith('from_'):
 				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
 				chunk_data['lr_paths_types'] = chunk_data['lr_paths_types'].apply(lambda lr_path_types: str([[node_type_to_idx[node_type] for node_type in lr_path]
 																											 for lr_path in self.parse_list_of_lists(lr_path_types, type_=str)]))
 				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
+
+				local_max_ast_depth = chunk_data['lr_paths_types'].apply(lambda x: ast.literal_eval(x)).apply(lambda row: max([len(sublist) for sublist in row])).max()
+				if local_max_ast_depth > global_max_ast_depth: global_max_ast_depth = local_max_ast_depth
+
+		return global_max_ast_depth
 
 	def upper_triangle(self, ll_sims):
 		rows = ll_sims.split(';')[:-1]
@@ -259,7 +267,6 @@ class DataHandler:
 			pbar.set_description(filename)
 			if filename.startswith('from_'):
 				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
-				print("hello")
 				chunk_data['ll_sims'] = chunk_data['ll_sims'].apply(self.upper_triangle)
 				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
 

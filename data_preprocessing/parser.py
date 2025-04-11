@@ -74,7 +74,9 @@ class Parser:
 		for start in tqdm(range(0, len(texts), batch_size)):
 			tokenized_texts += self.tokenizer(texts[start:start + batch_size]).input_ids
 
-		return tokenized_texts
+		position_ids = [list(range(len(token_list))) for token_list in tokenized_texts]
+
+		return tokenized_texts, position_ids
 
 	def add_structure(self, data):
 		ast_leaf_tokens, ast_leaves, ast_leaf_ranges, dfg_edges = [], [], [], []
