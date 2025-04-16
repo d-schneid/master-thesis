@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import torch
+import json
 
 from nemo.collections import llm
 from nemo.utils.import_utils import safe_import
@@ -8,7 +9,7 @@ from nemo.utils import logging
 from nemo.lightning import get_vocab_size
 from typing import Callable
 
-from custom_mcore_gpt_model import CustomMCoreGPTModel
+from structure_aware_mcore_gpt_model import StructureAwareMCoreGPTModel
 
 
 _, HAVE_TE = safe_import("transformer_engine")
@@ -18,14 +19,18 @@ def custom_forward_step(model, batch) -> torch.Tensor:
 	print("yeah custom forward step")
 	forward_args = {
 		"code_tokens": batch["code_tokens"],
+		"code_tokens_pos_ids": batch["code_tokens_pos_ids"],
 		"text_tokens": batch["text_tokens"],
+		"text_tokens_pos_ids": batch["text_tokens_pos_ids"],
 		"ll_sims": batch["ll_sims"],
 		"ast_leaf_code_token_idxs": batch["ast_leaf_code_token_idxs"],
 		"lr_paths_types": batch["lr_paths_types"],
+		"lr_paths_len": batch["lr_paths_len"],
 		"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
 		"dfg_edges": batch["dfg_edges"],
+		"dfg_node_mask": batch["dfg_node_mask"],
 	}
-	#print(f"batch in custom forward step: {batch}")
+
 	return model(**forward_args)
 
 
@@ -82,8 +87,9 @@ def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
 		required_host_keys.add('max_seqlen')
 
 	if parallel_state.is_pipeline_first_stage():
-		required_device_keys.update(("code_tokens", "text_tokens", "ll_sims", "ast_leaf_code_token_idxs",
-									 "lr_paths_types", "dfg_node_code_token_idxs", "dfg_edges"))
+		required_device_keys.update(("code_tokens", "code_tokens_pos_ids", "text_tokens", "text_tokens_pos_ids",
+									 "ll_sims", "ast_leaf_code_token_idxs", "lr_paths_types", "lr_paths_len",
+									 "dfg_node_code_token_idxs", "dfg_edges", "dfg_node_mask"))
 	if parallel_state.is_pipeline_last_stage():
 		required_device_keys.update(("labels", "loss_mask"))
 
@@ -103,12 +109,23 @@ def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
 
 
 @dataclass
-class StructureAwareConfig(llm.Qwen2Config500M):
+class StructureAwareStarcoder2Config(llm.Qwen2Config500M):
 
 	forward_step_fn: Callable = custom_forward_step
 	data_step_fn: Callable = custom_data_step
+	num_ast_node_types: int = field(init=False)
+	max_ast_depth: int = field(init=False)
 
-	def configure_model(self, tokenizer, pre_process=None, post_process=None) -> "CustomMCoreGPTModel":
+	def __post_init__(self):
+		super().__post_init__()
+
+		with open('../data/pretraining/metadata.json', 'r') as f_metadata:
+			metadata = json.load(f_metadata)
+
+		self.num_ast_node_types = metadata['num_ast_node_types']
+		self.max_ast_depth = metadata['max_ast_depth']
+
+	def configure_model(self, tokenizer, pre_process=None, post_process=None) -> "StructureAwareMCoreGPTModel":
 		if self.enable_cuda_graph:
 			assert HAVE_TE, "Transformer Engine is required for cudagraphs."
 			assert getattr(self, 'use_te_rng_tracker', False), (
@@ -142,7 +159,7 @@ class StructureAwareConfig(llm.Qwen2Config500M):
 		else:
 			vocab_size = get_vocab_size(self, tokenizer.vocab_size, self.make_vocab_size_divisible_by)
 
-		model = CustomMCoreGPTModel(
+		model = StructureAwareMCoreGPTModel(
 			self,
 			transformer_layer_spec=transformer_layer_spec,
 			vocab_size=vocab_size,

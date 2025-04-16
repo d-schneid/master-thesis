@@ -1,4 +1,4 @@
-from data_handler import DataHandler
+from data_preprocessing import DataHandler
 import ast
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -96,15 +96,24 @@ class StructureAwareDataModule(pl.LightningDataModule):
 
 class StructureAwareDataset(Dataset):
 
-	def __init__(self, data_path) -> None:
+	def __init__(self, data_dir) -> None:
 		super().__init__()
-		self.data = DataHandler(save_dir=data_path).get_concat_stored_data()
+		self.data_handler = DataHandler(save_dir=data_dir)
+		self.data = self.data_handler.get_concat_stored_data()
 
 		self.data['code_tokens'] = (self.data['code_tokens'].apply(lambda x: list(map(int, x.split(',')))).
 									apply(lambda x: torch.tensor(x)))
 
+		self.data['code_tokens_pos_ids'] = (self.data['code_tokens_pos_ids'].
+											apply(lambda x: list(map(int, x.split(',')))).
+											apply(lambda x: torch.tensor(x)))
+
 		self.data['text_tokens'] = (self.data['text_tokens'].apply(lambda x: list(map(int, x.split(',')))).
 									apply(lambda x: torch.tensor(x)))
+
+		self.data['text_tokens_pos_ids'] = (self.data['text_tokens_pos_ids'].
+											apply(lambda x: list(map(int, x.split(',')))).
+											apply(lambda x: torch.tensor(x)))
 
 		self.data['ll_sims'] = (self.data['ll_sims'].
 								apply(lambda x: [list(map(float, sublist.split(','))) for sublist in x.split(';')]).
@@ -118,6 +127,8 @@ class StructureAwareDataset(Dataset):
 		self.data['lr_paths_types'] = (self.data['lr_paths_types'].apply(lambda x: ast.literal_eval(x)).
 									   apply(pad_inner_lists))
 
+		self.data['lr_paths_len'] = (self.data['lr_paths_len'].apply(lambda x: list(map(int, x.split(',')))).
+									 apply(lambda x: torch.tensor(x)))
 
 		self.data['dfg_node_code_token_idxs'] = (self.data['dfg_node_code_token_idxs'].
 												 apply(lambda x: ast.literal_eval(x)).
@@ -126,16 +137,22 @@ class StructureAwareDataset(Dataset):
 		self.data['dfg_edges'] = (self.data['dfg_edges'].apply(lambda x: ast.literal_eval(x)).
 								  apply(lambda lst: [[t[0]] + t[1] for t in lst])).apply(pad_inner_lists)
 
+		self.data['dfg_node_mask'] = (self.data['dfg_node_mask'].apply(lambda x: list(map(int, x.split(',')))).
+									  apply(lambda x: torch.tensor(x)))
 
 	def __getitem__(self, idx):
 		batch = {
 			'code_tokens': self.data.iloc[idx]['code_tokens'],
+			'code_tokens_pos_ids': self.data.iloc[idx]['code_tokens_pos_ids'],
 			'text_tokens': self.data.iloc[idx]['text_tokens'],
+			'text_tokens_pos_ids': self.data.iloc[idx]['text_tokens_pos_ids'],
 			'll_sims': self.data.iloc[idx]['ll_sims'],
 			'ast_leaf_code_token_idxs': self.data.iloc[idx]['ast_leaf_code_token_idxs'],
 			'lr_paths_types': self.data.iloc[idx]['lr_paths_types'],
+			'lr_paths_len': self.data.iloc[idx]['lr_paths_len'],
 			'dfg_node_code_token_idxs': self.data.iloc[idx]['dfg_node_code_token_idxs'],
-			'dfg_edges': self.data.iloc[idx]['dfg_edges']
+			'dfg_edges': self.data.iloc[idx]['dfg_edges'],
+			'dfg_node_mask': self.data.iloc[idx]['dfg_node_mask']
 		}
 
 		return batch
@@ -172,9 +189,10 @@ class StructureAwareDataset(Dataset):
 		batch_dict = {}
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
-			if key not in ['code_tokens', 'text_tokens']:
+			if key not in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids', 'dfg_node_mask',
+						   'lr_paths_len']:
 				batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_side='left') if key == 'll_sims' else pad_2d_tensors(batch_dict[key])
-			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=-1)
+			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=0)
 
 		return batch_dict
 
@@ -182,7 +200,7 @@ class StructureAwareDataset(Dataset):
 def pad_inner_lists(list_of_lists, padding_side='right'):
 	tensors = [torch.tensor(x) for x in list_of_lists]
 
-	return pad_sequence(tensors, batch_first=True, padding_value=-1, padding_side=padding_side) if tensors else [torch.tensor(-1)]
+	return pad_sequence(tensors, batch_first=True, padding_value=0, padding_side=padding_side) if tensors else [torch.tensor(-1)]
 
 
 def pad_2d_tensors(tensor_list, padding_side='right'):
@@ -195,9 +213,9 @@ def pad_2d_tensors(tensor_list, padding_side='right'):
 		cols_to_pad = max_cols - tensor.size(1)
 
 		if padding_side == 'right':
-			padded_tensor = torch.nn.functional.pad(tensor, (0, cols_to_pad, 0, rows_to_pad), mode='constant', value=-1)
+			padded_tensor = torch.nn.functional.pad(tensor, (0, cols_to_pad, 0, rows_to_pad), mode='constant', value=0)
 		else:
-			padded_tensor = torch.nn.functional.pad(tensor, (cols_to_pad, 0, 0, rows_to_pad), mode='constant', value=-1)
+			padded_tensor = torch.nn.functional.pad(tensor, (cols_to_pad, 0, 0, rows_to_pad), mode='constant', value=0)
 
 		padded_tensors.append(padded_tensor)
 

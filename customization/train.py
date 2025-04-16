@@ -2,10 +2,11 @@ import torch
 from nemo import lightning as nl
 from nemo.collections import llm
 from megatron.core.optimizer import OptimizerConfig
+from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
 
-from structure_aware_config import StructureAwareConfig
+from structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 from structure_aware_data import StructureAwareDataModule
-from structure_aware_model import StructureAwareModel
+from structure_aware_starcoder2_model import StructureAwareStarcoder2Model
 
 
 if __name__ == "__main__":
@@ -14,7 +15,7 @@ if __name__ == "__main__":
 
     data = StructureAwareDataModule()
 
-    model = StructureAwareModel(config=StructureAwareConfig())
+    model = StructureAwareStarcoder2Model(config=StructureAwareStarcoder2Config())
 
     strategy = nl.MegatronStrategy(
         tensor_model_parallel_size=1,
@@ -41,11 +42,13 @@ if __name__ == "__main__":
         log_dir="../scripts/test_logdir", # logs and checkpoints will be written here
     )
 
+    tokenizer = get_nmt_tokenizer(library='huggingface', model_name='bigcode/starcoder2-3b', use_fast=True)
+
     llm.train(
         model=model,
         data=data,
         trainer=trainer,
         log=nemo_logger,
-        tokenizer='data',
+        tokenizer=tokenizer,
         optim=opt,
     )

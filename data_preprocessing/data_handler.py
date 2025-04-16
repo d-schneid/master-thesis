@@ -177,6 +177,7 @@ class DataHandler:
 		data.drop(columns=['ast_leaves'], inplace=True)
 		data['ll_sims'] = ll_sims
 		data['lr_paths_types'] = lr_paths
+		data['lr_paths_len'] = data['lr_paths_types'].apply(lambda row: ",".join(str(len(sublist)) for sublist in row))
 
 		return all_node_types
 
@@ -202,6 +203,7 @@ class DataHandler:
 
 		data['dfg_edges'] = dfg_edges
 		data['dfg_node_code_token_idxs'] = dfg_node_code_token_idxs
+		data['dfg_node_mask'] = [",".join(["1" for _ in sublist]) for sublist in dfg_node_code_token_idxs]
 
 	def store_preprocessed_data(self, data, num_rows_per_file):
 		# do memory intensive part in chunks
@@ -214,8 +216,8 @@ class DataHandler:
 			all_node_types.update(chunk_node_types)
 			self.map_dfg_node_code_token_idices(chunk_data)
 			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
-									 'ast_leaf_code_token_idxs', 'll_sims', 'lr_paths_types',
-									 'dfg_node_code_token_idxs', 'dfg_edges']]
+									 'ast_leaf_code_token_idxs', 'll_sims', 'lr_paths_types', 'lr_paths_len',
+									 'dfg_node_code_token_idxs', 'dfg_edges', 'dfg_node_mask']]
 
 			for col in ['ast_leaf_code_token_idxs', 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']:
 				chunk_data[col] = chunk_data[col].apply(str)
