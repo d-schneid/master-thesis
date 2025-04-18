@@ -1,5 +1,6 @@
-from data_preprocessing import DataHandler
+from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
 import ast
+import json
 from torch.utils.data import Dataset, DataLoader
 import torch
 import lightning.pytorch as pl
@@ -14,6 +15,11 @@ _, HAVE_TE = safe_import("transformer_engine")
 
 if TYPE_CHECKING:
 	from nemo.collections.common.tokenizers.tokenizer_spec import TokenizerSpec
+
+with open('../data/pretraining/metadata.json', 'r') as f_metadata:
+	metadata = json.load(f_metadata)
+
+PAD_TOK_ID_AST = metadata['num_ast_node_types']
 
 
 class StructureAwareDataModule(pl.LightningDataModule):
@@ -99,6 +105,7 @@ class StructureAwareDataset(Dataset):
 	def __init__(self, data_dir) -> None:
 		super().__init__()
 		self.data_handler = DataHandler(save_dir=data_dir)
+		self.padding_value = self.data_handler.tokenizer.eos_token_id
 		self.data = self.data_handler.get_concat_stored_data()
 
 		self.data['code_tokens'] = (self.data['code_tokens'].apply(lambda x: list(map(int, x.split(',')))).
@@ -117,25 +124,26 @@ class StructureAwareDataset(Dataset):
 
 		self.data['ll_sims'] = (self.data['ll_sims'].
 								apply(lambda x: [list(map(float, sublist.split(','))) for sublist in x.split(';')]).
-								apply(pad_inner_lists, padding_side='left'))
+								apply(pad_inner_lists, padding_value=self.padding_value, padding_side='left'))
 
 		self.data['ast_leaf_code_token_idxs'] = (self.data['ast_leaf_code_token_idxs'].
 												 apply(lambda x: ast.literal_eval(x)).
-												 apply(pad_inner_lists))
+												 apply(pad_inner_lists, padding_value=self.padding_value))
 
 
 		self.data['lr_paths_types'] = (self.data['lr_paths_types'].apply(lambda x: ast.literal_eval(x)).
-									   apply(pad_inner_lists))
+									   apply(pad_inner_lists, padding_value=PAD_TOK_ID_AST))
 
 		self.data['lr_paths_len'] = (self.data['lr_paths_len'].apply(lambda x: list(map(int, x.split(',')))).
 									 apply(lambda x: torch.tensor(x)))
 
 		self.data['dfg_node_code_token_idxs'] = (self.data['dfg_node_code_token_idxs'].
 												 apply(lambda x: ast.literal_eval(x)).
-												 apply(pad_inner_lists))
+												 apply(pad_inner_lists, padding_value=self.padding_value))
 
-		self.data['dfg_edges'] = (self.data['dfg_edges'].apply(lambda x: ast.literal_eval(x)).
-								  apply(lambda lst: [[t[0]] + t[1] for t in lst])).apply(pad_inner_lists)
+		self.data['dfg_edges'] = ((self.data['dfg_edges'].apply(lambda x: ast.literal_eval(x)).
+								  apply(lambda lst: [[t[0]] + t[1] for t in lst])).
+								  apply(pad_inner_lists, padding_value=self.padding_value))
 
 		self.data['dfg_node_mask'] = (self.data['dfg_node_mask'].apply(lambda x: list(map(int, x.split(',')))).
 									  apply(lambda x: torch.tensor(x)))
@@ -189,21 +197,28 @@ class StructureAwareDataset(Dataset):
 		batch_dict = {}
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
-			if key not in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids', 'dfg_node_mask',
-						   'lr_paths_len']:
-				batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_side='left') if key == 'll_sims' else pad_2d_tensors(batch_dict[key])
-			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=0)
+			if key not in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
+						   'dfg_node_mask', 'lr_paths_len']:
+				if key == 'll_sims':
+					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value, padding_side='left')
+				elif key == 'lr_paths_types':
+					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=PAD_TOK_ID_AST)
+				else:
+					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value)
+
+			padding_value = self.padding_value if key != 'dfg_node_mask' else PAD_TOK_ID_DFG
+			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value)
 
 		return batch_dict
 
 
-def pad_inner_lists(list_of_lists, padding_side='right'):
+def pad_inner_lists(list_of_lists, padding_value, padding_side='right'):
 	tensors = [torch.tensor(x) for x in list_of_lists]
 
-	return pad_sequence(tensors, batch_first=True, padding_value=0, padding_side=padding_side) if tensors else [torch.tensor(-1)]
+	return pad_sequence(tensors, batch_first=True, padding_value=padding_value, padding_side=padding_side) if tensors else [torch.tensor(-1)]
 
 
-def pad_2d_tensors(tensor_list, padding_side='right'):
+def pad_2d_tensors(tensor_list, padding_value, padding_side='right'):
 	max_rows = max(tensor.size(0) for tensor in tensor_list)
 	max_cols = max(tensor.size(1) for tensor in tensor_list)
 
@@ -213,9 +228,9 @@ def pad_2d_tensors(tensor_list, padding_side='right'):
 		cols_to_pad = max_cols - tensor.size(1)
 
 		if padding_side == 'right':
-			padded_tensor = torch.nn.functional.pad(tensor, (0, cols_to_pad, 0, rows_to_pad), mode='constant', value=0)
+			padded_tensor = torch.nn.functional.pad(tensor, (0, cols_to_pad, 0, rows_to_pad), mode='constant', value=padding_value)
 		else:
-			padded_tensor = torch.nn.functional.pad(tensor, (cols_to_pad, 0, 0, rows_to_pad), mode='constant', value=0)
+			padded_tensor = torch.nn.functional.pad(tensor, (cols_to_pad, 0, 0, rows_to_pad), mode='constant', value=padding_value)
 
 		padded_tensors.append(padded_tensor)
 

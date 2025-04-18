@@ -15,8 +15,8 @@ if __name__ == '__main__':
 	parser = Parser()
 	parser.add_structure(data)
 
-	data['code_tokens'], data['code_tokens_pos_ids'] = parser.tokenize_codes_texts(list(data['code']))
-	data['text_tokens'], data['text_tokens_pos_ids'] = parser.tokenize_codes_texts(list(data['text']))
+	data['code_tokens'] = parser.tokenize_codes_texts(list(data['code']))
+	data['text_tokens'] = parser.tokenize_codes_texts(list(data['text']))
 
 	parser.add_code_tokens_ranges(data)
 	parser.map_ast_leaf_code_token_indices(data)

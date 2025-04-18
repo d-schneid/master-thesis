@@ -12,6 +12,9 @@ import pandas as pd
 tqdm.pandas()
 from datasets import load_dataset
 
+START_TOK_ID_DFG = 0
+PAD_TOK_ID_DFG = 2
+
 
 class DataHandler:
 
@@ -134,7 +137,7 @@ class DataHandler:
 
 	def convert_tokens_to_strings(self, data):
 		data = data.drop(columns=['ast_leaf_tokens', 'ast_leaf_ranges', 'code_tokens_ranges'])
-		for col in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids']:
+		for col in ['code_tokens', 'text_tokens']:
 			data[col] = data[col].progress_apply(lambda l: ','.join(list(map(str, l))))
 
 		return data.sample(frac=1).reset_index(drop=True)
@@ -171,7 +174,7 @@ class DataHandler:
 					curr_ll_sims[i, j] = curr_ll_sims[j, i] = self.get_ll_sim(curr_lr_paths[i], curr_lr_paths[j])
 
 			ll_sims.append(';'.join([','.join(list(map(str, row))) for row in curr_ll_sims]))
-			lr_paths.append([[node.type for node in path] for path in curr_lr_paths])
+			lr_paths.append([['<START_AST>']] + [[node.type for node in path] for path in curr_lr_paths] + [['<END_AST>']])
 			all_node_types.update(set(np.concatenate(lr_paths[-1])))
 
 		data.drop(columns=['ast_leaves'], inplace=True)
@@ -203,7 +206,9 @@ class DataHandler:
 
 		data['dfg_edges'] = dfg_edges
 		data['dfg_node_code_token_idxs'] = dfg_node_code_token_idxs
-		data['dfg_node_mask'] = [",".join(["1" for _ in sublist]) for sublist in dfg_node_code_token_idxs]
+		data['dfg_node_mask'] = [str(START_TOK_ID_DFG) + ","
+								 + ",".join(["1" for _ in sublist])
+								 + "," + str(PAD_TOK_ID_DFG) for sublist in dfg_node_code_token_idxs]
 
 	def store_preprocessed_data(self, data, num_rows_per_file):
 		# do memory intensive part in chunks
@@ -215,6 +220,7 @@ class DataHandler:
 			chunk_node_types = self.add_ast_lr_paths_and_ll_sim(chunk_data)
 			all_node_types.update(chunk_node_types)
 			self.map_dfg_node_code_token_idices(chunk_data)
+			self.add_special_tokens(chunk_data)
 			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
 									 'ast_leaf_code_token_idxs', 'll_sims', 'lr_paths_types', 'lr_paths_len',
 									 'dfg_node_code_token_idxs', 'dfg_edges', 'dfg_node_mask']]
@@ -280,3 +286,14 @@ class DataHandler:
 				data.append(chunk_data)
 
 		return pd.concat(data)
+
+	def add_special_tokens(self, data):
+		data['code_tokens'] = data['code_tokens'].apply(lambda x: str(self.tokenizer.bos_token_id) + ',' + x + ',' + str(self.tokenizer.eos_token_id))
+		data['code_tokens_pos_ids'] = data['code_tokens'].apply(lambda x: ','.join(map(str, range(len(x.split(','))))))
+
+		data['text_tokens'] = data['text_tokens'].apply(lambda x: str(self.tokenizer.bos_token_id) + ',' + x + ',' + str(self.tokenizer.eos_token_id))
+		data['text_tokens_pos_ids'] = data['text_tokens'].apply(lambda x: ','.join(map(str, range(len(x.split(','))))))
+
+		# account for BOS token
+		data['ast_leaf_code_token_idxs'] = data['ast_leaf_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
+		data['dfg_node_code_token_idxs'] = data['dfg_node_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])

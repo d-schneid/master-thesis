@@ -55,7 +55,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 		if self.pre_process:
 			self.dfg_node_embedding = LanguageModelEmbedding(
 				config=self.config,
-				vocab_size=2, # unique embedding for all DFG nodes and padding
+				vocab_size=3, # unique embedding for all DFG nodes + padding + <SEP> token
 				max_sequence_length=self.max_sequence_length,
 				position_embedding_type='none',
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
@@ -63,7 +63,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 
 			self.ast_node_type_embedding = LanguageModelEmbedding(
 				config=self.config,
-				vocab_size=self.config.num_ast_node_types,
+				vocab_size=self.config.num_ast_node_types + 1, # padding
 				max_sequence_length=self.max_sequence_length,
 				position_embedding_type='none',
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
