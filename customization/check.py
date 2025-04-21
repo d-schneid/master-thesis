@@ -9,32 +9,6 @@ from transformers import AutoTokenizer
 
 
 if __name__ == "__main__":
-	#A = torch.randn(82, 4, 13, 896)
-	#B = torch.randint(0, 14, (82, 4))
-	#range_tensor = torch.arange(13).view(1, 1, 13).to(B.device)
-	#mask = range_tensor < B.unsqueeze(-1)
-	#maskk = mask[0]
-	#maskkk = mask[1]
-
-	tokenizer = get_nmt_tokenizer(
-		library="huggingface",
-		model_name='bigcode/starcoder2-15b',
-		use_fast=True,
-	)
-
-	tokenizer_hf = AutoTokenizer.from_pretrained('bigcode/starcoder2-7b')
-
-	print(tokenizer.bos_id)
-	print(tokenizer.bos_token)
-	print(tokenizer.eos_id)
-	print(tokenizer.eos_token)
-
-	print("HF Tokenizer:")
-	print(tokenizer_hf.bos_token_id)
-	print(tokenizer_hf.bos_token)
-	print(tokenizer_hf.eos_token_id)
-	print(tokenizer_hf.eos_token)
-
 	data_module = StructureAwareDataModule()
 	data_module.setup()
 	dataloader = data_module.train_dataloader()

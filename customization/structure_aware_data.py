@@ -3,6 +3,7 @@ import ast
 import json
 from torch.utils.data import Dataset, DataLoader
 import torch
+import torch.nn.functional as F
 import lightning.pytorch as pl
 from typing import Optional, List, TYPE_CHECKING
 from nemo.lightning.pytorch.plugins import MegatronDataSampler
@@ -149,8 +150,10 @@ class StructureAwareDataset(Dataset):
 									  apply(lambda x: torch.tensor(x)))
 
 	def __getitem__(self, idx):
+		code_tokens = self.data.iloc[idx]['code_tokens']
+
 		batch = {
-			'code_tokens': self.data.iloc[idx]['code_tokens'],
+			'code_tokens': code_tokens[:-1],
 			'code_tokens_pos_ids': self.data.iloc[idx]['code_tokens_pos_ids'],
 			'text_tokens': self.data.iloc[idx]['text_tokens'],
 			'text_tokens_pos_ids': self.data.iloc[idx]['text_tokens_pos_ids'],
@@ -160,7 +163,9 @@ class StructureAwareDataset(Dataset):
 			'lr_paths_len': self.data.iloc[idx]['lr_paths_len'],
 			'dfg_node_code_token_idxs': self.data.iloc[idx]['dfg_node_code_token_idxs'],
 			'dfg_edges': self.data.iloc[idx]['dfg_edges'],
-			'dfg_node_mask': self.data.iloc[idx]['dfg_node_mask']
+			'dfg_node_mask': self.data.iloc[idx]['dfg_node_mask'],
+			'labels': code_tokens[1:],
+			'loss_mask': torch.ones(len(code_tokens[1:]))
 		}
 
 		return batch
@@ -198,7 +203,7 @@ class StructureAwareDataset(Dataset):
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
 			if key not in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
-						   'dfg_node_mask', 'lr_paths_len']:
+						   'dfg_node_mask', 'lr_paths_len', 'labels', 'loss_mask']:
 				if key == 'll_sims':
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value, padding_side='left')
 				elif key == 'lr_paths_types':
@@ -209,7 +214,29 @@ class StructureAwareDataset(Dataset):
 			padding_value = self.padding_value if key != 'dfg_node_mask' else PAD_TOK_ID_DFG
 			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value)
 
-		return batch_dict
+		return pad_labels_loss_mask(batch_dict)
+
+
+def pad_labels_loss_mask(batch_dict):
+	labels = batch_dict['labels']
+	loss_mask = batch_dict['loss_mask']
+	dfg_node_mask = batch_dict['dfg_node_mask']
+	lr_paths_len = batch_dict['lr_paths_len']
+
+	pad_len = dfg_node_mask[0].size(0) + lr_paths_len[0].size(0)
+
+	padded_labels = []
+	padded_loss_mask = []
+	for label, mask in zip(labels, loss_mask):
+		padded_label = F.pad(label, (0, pad_len), value=0)
+		padded_mask = F.pad(mask, (0, pad_len), value=0)
+		padded_labels.append(padded_label)
+		padded_loss_mask.append(padded_mask)
+
+	batch_dict['labels'] = torch.stack(padded_labels)
+	batch_dict['loss_mask'] = torch.stack(padded_loss_mask)
+
+	return batch_dict
 
 
 def pad_inner_lists(list_of_lists, padding_value, padding_side='right'):

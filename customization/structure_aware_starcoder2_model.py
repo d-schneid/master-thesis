@@ -42,9 +42,11 @@ class StructureAwareStarcoder2Model(Qwen2Model):
 		dfg_edges = None,
 		dfg_node_mask = None,
     ):
-		self.module(input_ids, position_ids, attention_mask, code_tokens=code_tokens,
+		output_tensor = self.module(input_ids, position_ids, attention_mask, labels=labels, code_tokens=code_tokens,
 					code_tokens_pos_ids=code_tokens_pos_ids, text_tokens=text_tokens,
 					text_tokens_pos_ids=text_tokens_pos_ids, ll_sims=ll_sims,
 					ast_leaf_code_token_idxs=ast_leaf_code_token_idxs, lr_paths_types=lr_paths_types,
 					lr_paths_len=lr_paths_len, dfg_node_code_token_idxs=dfg_node_code_token_idxs,dfg_edges=dfg_edges,
 					dfg_node_mask=dfg_node_mask)
+
+		return output_tensor

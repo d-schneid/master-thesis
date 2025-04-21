@@ -29,6 +29,7 @@ def custom_forward_step(model, batch) -> torch.Tensor:
 		"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
 		"dfg_edges": batch["dfg_edges"],
 		"dfg_node_mask": batch["dfg_node_mask"],
+		"labels": batch["labels"],
 	}
 
 	return model(**forward_args)
