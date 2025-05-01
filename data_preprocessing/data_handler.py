@@ -18,7 +18,7 @@ PAD_TOK_ID_DFG = 2
 
 class DataHandler:
 
-	def __init__(self, save_dir, dataset='code_search_net', lang='python', tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-7b')):
+	def __init__(self, save_dir, dataset='code_search_net', lang='python', tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b')):
 		self.save_dir = save_dir
 		self.dataset = dataset
 		self.lang = lang
@@ -148,6 +148,9 @@ class DataHandler:
 			path.append(path[-1].parent)
 
 		return path
+
+	def clean_data(self, data):
+		return data[data['dfg_edges'].apply(lambda row: row != [])].reset_index(drop=True)
 
 	def get_ll_sim(self, lr_path1, lr_path2):
 		common = 1 # root is always common

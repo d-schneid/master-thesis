@@ -1,16 +1,16 @@
 from collections import OrderedDict
 from typing import Optional, Literal
 
-from megatron.core import InferenceParams
-from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
-from megatron.core.packed_seq_params import PackedSeqParams
+import torch
+from torch import Tensor
 
+from megatron.core import InferenceParams
+from megatron.core.config_logger import has_config_logger_enabled, log_config_to_disk
 from megatron.core.models.gpt import GPTModel as MCoreGPTModel
 from megatron.core.transformer.transformer_config import TransformerConfig
+from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
+from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.transformer.spec_utils import ModuleSpec
-from megatron.core.config_logger import has_config_logger_enabled, log_config_to_disk
-from torch import Tensor
-import torch
 
 
 class StructureAwareMCoreGPTModel(MCoreGPTModel):
@@ -32,7 +32,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 			rope_scaling: bool = False,
 			rope_scaling_factor: float = 8.0,
 			scatter_embedding_sequence_parallel: bool = True,
-			seq_len_interpolation_factor: float | None = None
+			seq_len_interpolation_factor: Optional[float] = None,
 	) -> None:
 		super().__init__(
 			config=config,
@@ -50,7 +50,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 			rope_scaling=rope_scaling,
 			rope_scaling_factor=rope_scaling_factor,
 			scatter_embedding_sequence_parallel=scatter_embedding_sequence_parallel,
-			seq_len_interpolation_factor=seq_len_interpolation_factor,
+			seq_len_interpolation_factor=seq_len_interpolation_factor
 		)
 		if self.pre_process:
 			self.dfg_node_embedding = LanguageModelEmbedding(
@@ -77,41 +77,25 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
 			)
 
-		print(f"Staaaaate dict: {self.state_dict()}")
-
 	def forward(
-        self,
-        input_ids: Tensor,
-        position_ids: Tensor,
-        attention_mask: Tensor,
-        decoder_input: Tensor = None,
-        labels: Tensor = None,
-        inference_params: InferenceParams = None,
-        packed_seq_params: PackedSeqParams = None,
-        extra_block_kwargs: dict = None,
-        runtime_gather_output: Optional[bool] = None,
-		code_tokens: Tensor = None,
-		code_tokens_pos_ids: Tensor = None,
-		text_tokens: Tensor = None,
-		text_tokens_pos_ids: Tensor = None,
-		ll_sims: Tensor = None,
-		ast_leaf_code_token_idxs: Tensor = None,
-		lr_paths_types: Tensor = None,
-		lr_paths_len: Tensor = None,
-		dfg_node_code_token_idxs: Tensor = None,
-		dfg_edges: Tensor = None,
-		dfg_node_mask: Tensor = None,
-    ) -> Tensor:
-		"""Forward function of the GPT Model This function passes the input tensors
-		through the embedding layer, and then the decoeder and finally into the post
-		processing layer (optional).
-
-		It either returns the Loss values if labels are given  or the final hidden units
-
-		Args:
-		    runtime_gather_output (bool): Gather output at runtime. Default None means
-		        `parallel_output` arg in the constructor will be used.
-		"""
+			self,
+			code_token_ids: Tensor,
+			code_token_pos_ids: Tensor,
+			ll_sims: Tensor,
+			ast_leaf_code_token_idxs: Tensor,
+			lr_paths_types: Tensor,
+			lr_paths_len: Tensor,
+			dfg_node_code_token_idxs: Tensor,
+			dfg_edges: Tensor,
+			dfg_node_mask: Tensor,
+			attention_mask: Tensor,
+			decoder_input: Tensor = None,
+			labels: Tensor = None,
+			inference_params: InferenceParams = None,
+			packed_seq_params: PackedSeqParams = None,
+			extra_block_kwargs: dict = None,
+			runtime_gather_output: Optional[bool] = None,
+	) -> Tensor:
 		# If decoder_input is provided (not None), then input_ids and position_ids are ignored.
 		# Otherwise, apply embedding layer on input_ids and position_ids to get decoder_input.
 
@@ -119,7 +103,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 		if decoder_input is not None:
 			pass
 		elif self.pre_process:
-			decoder_input = self.embedding(input_ids=code_tokens, position_ids=code_tokens_pos_ids)
+			code_token_embedding = self.embedding(input_ids=code_token_ids, position_ids=code_token_pos_ids)
 
 			ast_node_type_embedding = self.ast_node_type_embedding(input_ids=lr_paths_types, position_ids=None)
 			len_longest_lr_path = lr_paths_types.shape[-1]
@@ -135,7 +119,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 
 			dfg_node_embedding = self.dfg_node_embedding(input_ids=dfg_node_mask, position_ids=None)
 
-			decoder_input = torch.cat((decoder_input, final_leaf_embedding, dfg_node_embedding), dim=0)
+			decoder_input = torch.cat((code_token_embedding, final_leaf_embedding, dfg_node_embedding), dim=0)
 		else:
 			# intermediate stage of pipeline
 			# decoder will get hidden_states from encoder.input_tensor
@@ -201,8 +185,8 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 		if has_config_logger_enabled(self.config):
 			payload = OrderedDict(
 				{
-					'input_ids': input_ids,
-					'position_ids': position_ids,
+					'input_ids': code_token_ids,
+					'position_ids': code_token_pos_ids,
 					'attention_mask': attention_mask,
 					'decoder_input': decoder_input,
 					'logits': logits,

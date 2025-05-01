@@ -1,16 +1,18 @@
-from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
 import ast
 import json
+from typing import Optional, List, TYPE_CHECKING
+
+from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
+
 from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.nn.functional as F
-import lightning.pytorch as pl
-from typing import Optional, List, TYPE_CHECKING
-from nemo.lightning.pytorch.plugins import MegatronDataSampler
-from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
-from nemo.utils.import_utils import safe_import
 from torch.utils import data
 from torch.nn.utils.rnn import pad_sequence
+from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
+
+from nemo.collections.llm.gpt.data.mock import MockDataModule
+from nemo.utils.import_utils import safe_import
 
 _, HAVE_TE = safe_import("transformer_engine")
 
@@ -23,51 +25,40 @@ with open('../data/pretraining/metadata.json', 'r') as f_metadata:
 PAD_TOK_ID_AST = metadata['num_ast_node_types']
 
 
-class StructureAwareDataModule(pl.LightningDataModule):
+class StructureAwareDataModule(MockDataModule):
 
 	def __init__(
 			self,
 			seq_length: int = 2048,
 			tokenizer: Optional["TokenizerSpec"] = None,
-			micro_batch_size: int = 4,
+			micro_batch_size: int = 2,
 			global_batch_size: int = 16,
 			rampup_batch_size: Optional[List[int]] = None,
 			num_train_samples: int = 10_000,
 			num_val_samples: int = 10_000,
 			num_test_samples: int = 10_000,
-			num_workers: int = 8,
+			num_workers: int = 1,
 			pin_memory: bool = True,
 			persistent_workers: bool = False,
 			create_attention_mask: bool = False,
 			vocab_file: Optional[str] = None,
-			merges_file: Optional[str] = None
+			merges_file: Optional[str] = None,
 	):
-		super().__init__()
-		self.seq_length = seq_length
-		self.micro_batch_size = micro_batch_size
-		self.global_batch_size = global_batch_size
-		self.num_train_samples = num_train_samples
-		self.num_val_samples = num_val_samples
-		self.num_test_samples = num_test_samples
-		self.num_workers = num_workers
-		self.pin_memory = pin_memory
-		self.persistent_workers = persistent_workers
-		self.create_attention_mask = create_attention_mask or not HAVE_TE
-
-		if tokenizer is None:
-			from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
-
-			self.tokenizer = get_nmt_tokenizer(
-				"megatron", "GPT2BPETokenizer", vocab_file=vocab_file, merges_file=merges_file
-			)
-		else:
-			self.tokenizer = tokenizer
-
-		self.data_sampler = MegatronDataSampler(
-			seq_len=self.seq_length,
-			micro_batch_size=self.micro_batch_size,
-			global_batch_size=self.global_batch_size,
+		super().__init__(
+			seq_length=seq_length,
+			tokenizer=tokenizer,
+			micro_batch_size=micro_batch_size,
+			global_batch_size=global_batch_size,
 			rampup_batch_size=rampup_batch_size,
+			num_train_samples=num_train_samples,
+			num_val_samples=num_val_samples,
+			num_test_samples=num_test_samples,
+			num_workers=num_workers,
+			pin_memory=pin_memory,
+			persistent_workers=persistent_workers,
+			create_attention_mask=create_attention_mask,
+			vocab_file=vocab_file,
+			merges_file=merges_file,
 		)
 
 	def setup(self, stage: str = "") -> None:
@@ -149,14 +140,15 @@ class StructureAwareDataset(Dataset):
 		self.data['dfg_node_mask'] = (self.data['dfg_node_mask'].apply(lambda x: list(map(int, x.split(',')))).
 									  apply(lambda x: torch.tensor(x)))
 
+	def __len__(self) -> int:
+		return len(self.data)
+
 	def __getitem__(self, idx):
 		code_tokens = self.data.iloc[idx]['code_tokens']
 
 		batch = {
-			'code_tokens': code_tokens[:-1],
-			'code_tokens_pos_ids': self.data.iloc[idx]['code_tokens_pos_ids'],
-			'text_tokens': self.data.iloc[idx]['text_tokens'],
-			'text_tokens_pos_ids': self.data.iloc[idx]['text_tokens_pos_ids'],
+			'code_token_ids': code_tokens[:-1],
+			'code_token_pos_ids': self.data.iloc[idx]['code_tokens_pos_ids'],
 			'll_sims': self.data.iloc[idx]['ll_sims'],
 			'ast_leaf_code_token_idxs': self.data.iloc[idx]['ast_leaf_code_token_idxs'],
 			'lr_paths_types': self.data.iloc[idx]['lr_paths_types'],
@@ -170,39 +162,12 @@ class StructureAwareDataset(Dataset):
 
 		return batch
 
-	def __len__(self) -> int:
-		return len(self.data)
-
-	def _collate_fn(self, batch):
-		"""
-		A default implementation of a collation function.
-		Users should override this method to define custom data loaders.
-		"""
-		return data.dataloader.default_collate(batch)
-
 	def collate_fn(self, batch):
-		"""Method that user pass as functor to DataLoader.
-
-		The method optionally performs neural type checking and add types to the outputs.
-
-		Please note, subclasses of Dataset should not implement `input_types`.
-
-		# Usage:
-		dataloader = torch.utils.data.DataLoader(
-				....,
-				collate_fn=dataset.collate_fn,
-				....
-		)
-
-		Returns
-		-------
-			Collated batch, with or without types.
-		"""
 		# Initialize a dictionary to store the batch data
 		batch_dict = {}
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
-			if key not in ['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
+			if key not in ['code_token_ids', 'code_token_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
 						   'dfg_node_mask', 'lr_paths_len', 'labels', 'loss_mask']:
 				if key == 'll_sims':
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value, padding_side='left')

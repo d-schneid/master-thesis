@@ -1,41 +1,21 @@
-from dataclasses import dataclass, field
-import torch
 import json
-
-from nemo.collections import llm
-from nemo.utils.import_utils import safe_import
-from megatron.core.transformer.spec_utils import ModuleSpec
-from nemo.utils import logging
-from nemo.lightning import get_vocab_size
-from typing import Callable
+from typing import Callable, Dict
+from dataclasses import dataclass, field
 
 from structure_aware_mcore_gpt_model import StructureAwareMCoreGPTModel
 
+import torch
+from megatron.core.transformer.spec_utils import ModuleSpec
+
+from nemo.collections.llm import Starcoder2Config3B
+from nemo.utils.import_utils import safe_import
+from nemo.utils import logging
+from nemo.lightning import get_vocab_size
 
 _, HAVE_TE = safe_import("transformer_engine")
 
 
-def custom_forward_step(model, batch) -> torch.Tensor:
-	print("yeah custom forward step")
-	forward_args = {
-		"code_tokens": batch["code_tokens"],
-		"code_tokens_pos_ids": batch["code_tokens_pos_ids"],
-		"text_tokens": batch["text_tokens"],
-		"text_tokens_pos_ids": batch["text_tokens_pos_ids"],
-		"ll_sims": batch["ll_sims"],
-		"ast_leaf_code_token_idxs": batch["ast_leaf_code_token_idxs"],
-		"lr_paths_types": batch["lr_paths_types"],
-		"lr_paths_len": batch["lr_paths_len"],
-		"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
-		"dfg_edges": batch["dfg_edges"],
-		"dfg_node_mask": batch["dfg_node_mask"],
-		"labels": batch["labels"],
-	}
-
-	return model(**forward_args)
-
-
-def get_batch_on_this_context_parallel_rank(batch) -> dict[str, torch.Tensor]:
+def get_batch_on_this_context_parallel_rank(batch) -> Dict[str, torch.Tensor]:
 	from megatron.core import parallel_state
 
 	if (cp_size := parallel_state.get_context_parallel_world_size()) > 1:
@@ -63,14 +43,10 @@ def get_batch_on_this_context_parallel_rank(batch) -> dict[str, torch.Tensor]:
 	return batch
 
 
-def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
+def structure_aware_gpt_data_step(dataloader_iter) -> Dict[str, torch.Tensor]:
 	from megatron.core import parallel_state
 
-	# Based on: https://github.com/NVIDIA/Megatron-LM/blob/main/pretrain_gpt.py#L87
-	# https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L828-L842
-
 	batch = next(dataloader_iter)
-	#print(f"batch in custom data step: {batch}")
 
 	_batch: dict
 	if isinstance(batch, tuple) and len(batch) == 3:
@@ -88,9 +64,9 @@ def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
 		required_host_keys.add('max_seqlen')
 
 	if parallel_state.is_pipeline_first_stage():
-		required_device_keys.update(("code_tokens", "code_tokens_pos_ids", "text_tokens", "text_tokens_pos_ids",
-									 "ll_sims", "ast_leaf_code_token_idxs", "lr_paths_types", "lr_paths_len",
-									 "dfg_node_code_token_idxs", "dfg_edges", "dfg_node_mask"))
+		required_device_keys.update(("code_token_ids", "code_token_pos_ids", "ll_sims", "ast_leaf_code_token_idxs",
+									 "lr_paths_types", "lr_paths_len", "dfg_node_code_token_idxs", "dfg_edges",
+									 "dfg_node_mask"))
 	if parallel_state.is_pipeline_last_stage():
 		required_device_keys.update(("labels", "loss_mask"))
 
@@ -109,11 +85,63 @@ def custom_data_step(dataloader_iter)  -> dict[str, torch.Tensor]:
 	return output
 
 
-@dataclass
-class StructureAwareStarcoder2Config(llm.Qwen2Config500M):
+def get_packed_seq_params(batch):
+	from megatron.core.packed_seq_params import PackedSeqParams
 
-	forward_step_fn: Callable = custom_forward_step
-	data_step_fn: Callable = custom_data_step
+	cu_seqlens = batch['cu_seqlens'].squeeze()  # remove batch size dimension (mbs=1)
+	# remove -1 "paddings" added in collate_fn
+	if (cu_seqlens_argmin := batch.get('cu_seqlens_argmin', None)) is not None:
+		# pre-compute cu_seqlens_argmin in dataset class for perf
+		cu_seqlens = cu_seqlens[: cu_seqlens_argmin.item()]
+	else:
+		cu_seqlens = cu_seqlens[: torch.argmin(cu_seqlens)]
+
+	# pre-compute max_seqlens in dataset class for perf
+	max_seqlen = batch['max_seqlen'].squeeze() if 'max_seqlen' in batch else None
+
+	# these args are passed eventually into TEDotProductAttention.forward()
+	return PackedSeqParams(
+		cu_seqlens_q=cu_seqlens,
+		cu_seqlens_kv=cu_seqlens,
+		max_seqlen_q=max_seqlen,
+		max_seqlen_kv=max_seqlen,
+		qkv_format='thd',
+	)
+
+
+def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
+	forward_args = {
+		"code_token_ids": batch["code_token_ids"],
+		"code_token_pos_ids": batch["code_token_pos_ids"],
+		"ll_sims": batch["ll_sims"],
+		"ast_leaf_code_token_idxs": batch["ast_leaf_code_token_idxs"],
+		"lr_paths_types": batch["lr_paths_types"],
+		"lr_paths_len": batch["lr_paths_len"],
+		"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
+		"dfg_edges": batch["dfg_edges"],
+		"dfg_node_mask": batch["dfg_node_mask"],
+		"labels": batch["labels"],
+	}
+
+	if 'attention_mask' not in batch:
+		assert (
+			HAVE_TE
+		), "The dataloader did not provide an attention mask, however Transformer Engine was not detected. \
+			This requires Transformer Engine's implementation of fused or flash attention."
+	else:
+		forward_args["attention_mask"] = batch['attention_mask']
+
+	if 'cu_seqlens' in batch:
+		forward_args['packed_seq_params'] = get_packed_seq_params(batch)
+
+	return model(**forward_args)
+
+
+@dataclass
+class StructureAwareStarcoder2Config(Starcoder2Config3B):
+
+	forward_step_fn: Callable = structure_aware_gpt_forward_step
+	data_step_fn: Callable = structure_aware_gpt_data_step
 	num_ast_node_types: int = field(init=False)
 	max_ast_depth: int = field(init=False)
 

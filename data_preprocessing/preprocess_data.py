@@ -9,7 +9,7 @@ if __name__ == '__main__':
 	data_dir = '../data/pretraining/'
 
 	data_handler = DataHandler(save_dir=data_dir)
-	data = data_handler.read_dataset(max_samples_per_split=10)
+	data = data_handler.read_dataset(max_samples_per_split=1000)
 	data = data_handler.preprocess(data)
 
 	parser = Parser()
@@ -22,6 +22,7 @@ if __name__ == '__main__':
 	parser.map_ast_leaf_code_token_indices(data)
 
 	data = data_handler.convert_tokens_to_strings(data)
+	data = data_handler.clean_data(data)
 	all_node_types = data_handler.store_preprocessed_data(data, num_rows_per_file=10000)
 	max_ast_depth = data_handler.convert_node_types_to_indices(all_node_types)
 	data_handler.reduce_ll_sims()

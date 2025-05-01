@@ -1,18 +1,15 @@
-import torch
-from nemo import lightning as nl
-from nemo.collections import llm
-from megatron.core.optimizer import OptimizerConfig
-from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
-
 from structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 from structure_aware_data import StructureAwareDataModule
 from structure_aware_starcoder2_model import StructureAwareStarcoder2Model
 
+from megatron.core.optimizer import OptimizerConfig
+
+from nemo import lightning as nl
+from nemo.collections import llm
+from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
+
 
 if __name__ == "__main__":
-    seq_length = 2048
-    global_batch_size = 16
-
     data = StructureAwareDataModule()
 
     model = StructureAwareStarcoder2Model(config=StructureAwareStarcoder2Config())
@@ -20,26 +17,32 @@ if __name__ == "__main__":
     strategy = nl.MegatronStrategy(
         tensor_model_parallel_size=1,
         pipeline_model_parallel_size=1,
-        pipeline_dtype=torch.bfloat16,
+	    virtual_pipeline_model_parallel_size=None,
+	    context_parallel_size=1,
+	    sequence_parallel=False,
+        expert_model_parallel_size=1
     )
 
     opt_config = OptimizerConfig(
         optimizer='adam',
-        lr=6e-4,
-        bf16=True,
+        lr=0.001,
+	    use_distributed_optimizer=True
     )
-    opt = nl.MegatronOptimizerModule(config=opt_config)
+    opt = nl.MegatronOptimizerModule(config=opt_config, lr_scheduler=nl.lr_scheduler.CosineAnnealingScheduler())
 
     trainer = nl.Trainer(
-        devices=1,
-        max_steps=50,
+        num_nodes=1,
+	    devices=8,
+        max_steps=4,
         accelerator="gpu",
         strategy=strategy,
         plugins=nl.MegatronMixedPrecision(precision="bf16-mixed"),
+	    log_every_n_steps=1,
+	    accumulate_grad_batches=1,
     )
 
     nemo_logger = nl.NeMoLogger(
-        log_dir="../scripts/test_logdir", # logs and checkpoints will be written here
+        log_dir="logdir", # logs and checkpoints will be written here
     )
 
     tokenizer = get_nmt_tokenizer(library='huggingface', model_name='bigcode/starcoder2-3b', use_fast=True)
