@@ -9,7 +9,7 @@ if __name__ == '__main__':
 	data_dir = '../data/pretraining/'
 
 	data_handler = DataHandler(save_dir=data_dir)
-	data = data_handler.read_dataset(max_samples_per_split=1000)
+	data = data_handler.read_dataset(max_samples_per_split=50)
 	data = data_handler.preprocess(data)
 
 	parser = Parser()

@@ -7,7 +7,6 @@ from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
 from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.nn.functional as F
-from torch.utils import data
 from torch.nn.utils.rnn import pad_sequence
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 

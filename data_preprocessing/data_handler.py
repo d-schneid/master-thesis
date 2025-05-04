@@ -224,11 +224,13 @@ class DataHandler:
 			all_node_types.update(chunk_node_types)
 			self.map_dfg_node_code_token_idices(chunk_data)
 			self.add_special_tokens(chunk_data)
-			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
-									 'ast_leaf_code_token_idxs', 'll_sims', 'lr_paths_types', 'lr_paths_len',
-									 'dfg_node_code_token_idxs', 'dfg_edges', 'dfg_node_mask']]
+			self.compute_attention_masks(chunk_data)
 
-			for col in ['ast_leaf_code_token_idxs', 'lr_paths_types', 'dfg_node_code_token_idxs', 'dfg_edges']:
+			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
+									 'lr_paths_types', 'lr_paths_len', 'll_sims', 'dfg_node_mask', 'attn_code_tokens',
+									 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']]
+
+			for col in ['lr_paths_types', 'attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']:
 				chunk_data[col] = chunk_data[col].apply(str)
 
 			chunk_data.to_parquet(os.path.join(self.save_dir, 'from_' + str(start) + '.parquet'), engine='fastparquet', row_group_offsets=100)
@@ -290,6 +292,65 @@ class DataHandler:
 
 		return pd.concat(data)
 
+	def build_attention_matrix(self, row, attn_col, num_targets, attn_col_offset):
+		code_tokens = row['code_tokens'].split(',')
+		num_code_tokens = len(code_tokens)
+
+		attention_matrix = [[0] * num_targets for _ in range(num_code_tokens)]
+
+		for j, code_token_idxs in enumerate(row[attn_col]):
+			for i in code_token_idxs:
+				attention_matrix[i][j + attn_col_offset] = 1 # adjust for padding
+
+		return attention_matrix
+
+	def generate_adj_matrix(self, edges, num_nodes):
+		all_nodes = set()
+		for to_node, from_nodes in edges:
+			all_nodes.add(to_node)
+			all_nodes.update(from_nodes)
+
+		adj_matrix = [[0] * num_nodes for _ in range(num_nodes)]
+
+		for to_node, from_nodes in edges:
+			for from_node in from_nodes:
+				adj_matrix[to_node][from_node] = 1
+
+		return adj_matrix
+
+	def compute_attention_masks(self, data):
+		data['attn_code_tokens'] = data['code_tokens'].apply(
+			lambda row: [[1] * len(row.split(',')) for _ in range(len(row.split(',')))]
+		)
+		data['attn_ast_leaves'] = data['lr_paths_len'].apply(
+			lambda row: [[1] * len(row.split(',')) for _ in range(len(row.split(',')))]
+		)
+		data['attn_dfg_edges'] = data.apply(
+			lambda row: self.generate_adj_matrix(
+			row['dfg_edges'], len(row['dfg_node_mask'].split(','))),axis=1
+		)
+
+		data['attn_code_ast'] = data.apply(
+			lambda row: self.build_attention_matrix(
+				row=row,
+				attn_col='ast_leaf_code_token_idxs',
+				num_targets=len(row['lr_paths_len'].split(',')),
+				attn_col_offset=1  # adjust for padding of AST leaves
+			),
+			axis=1
+		)
+
+		data['attn_code_dfg'] = data.apply(
+			lambda row: self.build_attention_matrix(
+				row=row,
+				attn_col='dfg_node_code_token_idxs',
+				num_targets=len(row['dfg_node_mask'].split(',')),
+				attn_col_offset=1  # adjust for padding of DFG nodes
+			),
+			axis=1
+		)
+
+
 	def add_special_tokens(self, data):
 		data['code_tokens'] = data['code_tokens'].apply(lambda x: str(self.tokenizer.bos_token_id) + ',' + x + ',' + str(self.tokenizer.eos_token_id))
 		data['code_tokens_pos_ids'] = data['code_tokens'].apply(lambda x: ','.join(map(str, range(len(x.split(','))))))
@@ -300,3 +361,6 @@ class DataHandler:
 		# account for BOS token
 		data['ast_leaf_code_token_idxs'] = data['ast_leaf_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
 		data['dfg_node_code_token_idxs'] = data['dfg_node_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
+
+		# account for padding of BOS and EOS tokens for DFG sequence
+		data['dfg_edges'] = data['dfg_edges'].apply(lambda row: [(x + 1, [y + 1 for y in ys]) for x, ys in row])
