@@ -149,8 +149,8 @@ class StructureAwareDataset(Dataset):
 			'attn_dfg_edges': self.data.iloc[idx]['attn_dfg_edges'],
 			'attn_code_ast': self.data.iloc[idx]['attn_code_ast'],
 			'attn_code_dfg': self.data.iloc[idx]['attn_code_dfg'],
-			'labels': code_tokens[1:],
-			'loss_mask': torch.ones(len(code_tokens[1:]))
+			'labels': code_tokens,
+			'loss_mask': torch.ones(len(code_tokens))
 		}
 
 		return batch
