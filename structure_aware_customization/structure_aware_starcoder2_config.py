@@ -64,9 +64,8 @@ def structure_aware_gpt_data_step(dataloader_iter) -> Dict[str, torch.Tensor]:
 		required_host_keys.add('max_seqlen')
 
 	if parallel_state.is_pipeline_first_stage():
-		required_device_keys.update(("code_token_ids", "code_token_pos_ids", "ll_sims", "ast_leaf_code_token_idxs",
-									 "lr_paths_types", "lr_paths_len", "dfg_node_code_token_idxs", "dfg_edges",
-									 "dfg_node_mask"))
+		required_device_keys.update(("code_token_ids", "code_token_pos_ids", "ll_sims", "lr_paths_types",
+									 "lr_paths_len", "dfg_node_mask"))
 	if parallel_state.is_pipeline_last_stage():
 		required_device_keys.update(("labels", "loss_mask"))
 
@@ -114,11 +113,8 @@ def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
 		"code_token_ids": batch["code_token_ids"],
 		"code_token_pos_ids": batch["code_token_pos_ids"],
 		"ll_sims": batch["ll_sims"],
-		"ast_leaf_code_token_idxs": batch["ast_leaf_code_token_idxs"],
 		"lr_paths_types": batch["lr_paths_types"],
 		"lr_paths_len": batch["lr_paths_len"],
-		"dfg_node_code_token_idxs": batch["dfg_node_code_token_idxs"],
-		"dfg_edges": batch["dfg_edges"],
 		"dfg_node_mask": batch["dfg_node_mask"],
 		"labels": batch["labels"],
 	}

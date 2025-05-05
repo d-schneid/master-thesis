@@ -106,21 +106,9 @@ class StructureAwareDataset(Dataset):
 											apply(lambda x: list(map(int, x.split(',')))).
 											apply(lambda x: torch.tensor(x)))
 
-		self.data['text_tokens'] = (self.data['text_tokens'].apply(lambda x: list(map(int, x.split(',')))).
-									apply(lambda x: torch.tensor(x)))
-
-		self.data['text_tokens_pos_ids'] = (self.data['text_tokens_pos_ids'].
-											apply(lambda x: list(map(int, x.split(',')))).
-											apply(lambda x: torch.tensor(x)))
-
 		self.data['ll_sims'] = (self.data['ll_sims'].
 								apply(lambda x: [list(map(float, sublist.split(','))) for sublist in x.split(';')]).
 								apply(pad_inner_lists, padding_value=self.padding_value, padding_side='left'))
-
-		self.data['ast_leaf_code_token_idxs'] = (self.data['ast_leaf_code_token_idxs'].
-												 apply(lambda x: ast.literal_eval(x)).
-												 apply(pad_inner_lists, padding_value=self.padding_value))
-
 
 		self.data['lr_paths_types'] = (self.data['lr_paths_types'].apply(lambda x: ast.literal_eval(x)).
 									   apply(pad_inner_lists, padding_value=PAD_TOK_ID_AST))
@@ -128,16 +116,18 @@ class StructureAwareDataset(Dataset):
 		self.data['lr_paths_len'] = (self.data['lr_paths_len'].apply(lambda x: list(map(int, x.split(',')))).
 									 apply(lambda x: torch.tensor(x)))
 
-		self.data['dfg_node_code_token_idxs'] = (self.data['dfg_node_code_token_idxs'].
-												 apply(lambda x: ast.literal_eval(x)).
-												 apply(pad_inner_lists, padding_value=self.padding_value))
-
-		self.data['dfg_edges'] = ((self.data['dfg_edges'].apply(lambda x: ast.literal_eval(x)).
-								  apply(lambda lst: [[t[0]] + t[1] for t in lst])).
-								  apply(pad_inner_lists, padding_value=self.padding_value))
-
 		self.data['dfg_node_mask'] = (self.data['dfg_node_mask'].apply(lambda x: list(map(int, x.split(',')))).
 									  apply(lambda x: torch.tensor(x)))
+
+		self.data['attn_code_tokens'] = self.data['attn_code_tokens'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
+
+		self.data['attn_ast_leaves'] = self.data['attn_ast_leaves'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
+
+		self.data['attn_dfg_edges'] = self.data['attn_dfg_edges'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
+
+		self.data['attn_code_ast'] = self.data['attn_code_ast'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
+
+		self.data['attn_code_dfg'] = self.data['attn_code_dfg'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
 
 	def __len__(self) -> int:
 		return len(self.data)
@@ -145,16 +135,20 @@ class StructureAwareDataset(Dataset):
 	def __getitem__(self, idx):
 		code_tokens = self.data.iloc[idx]['code_tokens']
 
+		# TODO: Check how to deal with offset of code_token_ids and labels, loss_mask
+		# TODO: adapt attention mask
 		batch = {
-			'code_token_ids': code_tokens[:-1],
+			'code_token_ids': code_tokens,
 			'code_token_pos_ids': self.data.iloc[idx]['code_tokens_pos_ids'],
 			'll_sims': self.data.iloc[idx]['ll_sims'],
-			'ast_leaf_code_token_idxs': self.data.iloc[idx]['ast_leaf_code_token_idxs'],
 			'lr_paths_types': self.data.iloc[idx]['lr_paths_types'],
 			'lr_paths_len': self.data.iloc[idx]['lr_paths_len'],
-			'dfg_node_code_token_idxs': self.data.iloc[idx]['dfg_node_code_token_idxs'],
-			'dfg_edges': self.data.iloc[idx]['dfg_edges'],
 			'dfg_node_mask': self.data.iloc[idx]['dfg_node_mask'],
+			'attn_code_tokens': self.data.iloc[idx]['attn_code_tokens'],
+			'attn_ast_leaves': self.data.iloc[idx]['attn_ast_leaves'],
+			'attn_dfg_edges': self.data.iloc[idx]['attn_dfg_edges'],
+			'attn_code_ast': self.data.iloc[idx]['attn_code_ast'],
+			'attn_code_dfg': self.data.iloc[idx]['attn_code_dfg'],
 			'labels': code_tokens[1:],
 			'loss_mask': torch.ones(len(code_tokens[1:]))
 		}
@@ -166,8 +160,7 @@ class StructureAwareDataset(Dataset):
 		batch_dict = {}
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
-			if key not in ['code_token_ids', 'code_token_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
-						   'dfg_node_mask', 'lr_paths_len', 'labels', 'loss_mask']:
+			if key not in ['code_token_ids', 'code_token_pos_ids', 'dfg_node_mask', 'lr_paths_len', 'labels', 'loss_mask']:
 				if key == 'll_sims':
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value, padding_side='left')
 				elif key == 'lr_paths_types':
@@ -178,7 +171,36 @@ class StructureAwareDataset(Dataset):
 			padding_value = self.padding_value if key != 'dfg_node_mask' else PAD_TOK_ID_DFG
 			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value)
 
-		return pad_labels_loss_mask(batch_dict)
+		batch_dict = pad_labels_loss_mask(batch_dict)
+
+		# individual padded attention masks
+		attn_code_tokens = batch_dict['attn_code_tokens']
+		attn_ast_leaves = batch_dict['attn_ast_leaves']
+		attn_dfg_edges = batch_dict['attn_dfg_edges']
+		attn_code_ast = batch_dict['attn_code_ast']
+		attn_code_dfg = batch_dict['attn_code_dfg']
+
+		# Compute transpose
+		attn_code_ast_T = attn_code_ast.transpose(1, 2)
+		attn_code_dfg_T = attn_code_dfg.transpose(1, 2)
+
+		# Compute null matrix for attention between AST leaves and DFG edges
+		attn_ast_dfg = torch.zeros(attn_ast_leaves.size(0), attn_ast_leaves.size(1), attn_dfg_edges.size(2))
+		attn_ast_dfg_T = attn_ast_dfg.transpose(1, 2)
+
+		# Build block matrices column-wise
+		first_col_matrix = torch.cat((attn_code_tokens, attn_code_ast_T, attn_code_dfg_T), dim=1)
+		second_col_matrix = torch.cat((attn_code_ast, attn_ast_leaves, attn_ast_dfg_T), dim=1)
+		third_col_matrix = torch.cat((attn_code_dfg, attn_ast_dfg, attn_dfg_edges), dim=1)
+		attn_mask = torch.cat((first_col_matrix, second_col_matrix, third_col_matrix), dim=2)
+
+		batch_dict['attention_mask'] = attn_mask
+
+		keys_to_remove = ['attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']
+		for key in keys_to_remove:
+			del batch_dict[key]
+
+		return batch_dict
 
 
 def pad_labels_loss_mask(batch_dict):
