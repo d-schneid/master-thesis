@@ -1,3 +1,4 @@
+import copy
 from collections import OrderedDict
 from typing import Optional, Literal
 
@@ -77,10 +78,21 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
 			)
 
+		config_copy = copy.copy(self.config)
+		config_copy.hidden_size = 1
+		self.code_token_rel_pos_embedding = LanguageModelEmbedding(
+			config=config_copy,
+			vocab_size=self.config.max_code_token_rel_pos + 1,  # padding
+			max_sequence_length=self.max_sequence_length,
+			position_embedding_type='none',
+			scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
+		)
+
 	def forward(
 			self,
 			code_token_ids: Tensor,
 			code_token_pos_ids: Tensor,
+			code_token_rel_pos_ids: Tensor,
 			ll_sims: Tensor,
 			lr_paths_types: Tensor,
 			lr_paths_len: Tensor,

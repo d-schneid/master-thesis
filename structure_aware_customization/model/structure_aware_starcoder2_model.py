@@ -26,6 +26,7 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 			self,
 			code_token_ids: torch.Tensor,
 			code_token_pos_ids: torch.Tensor,
+			code_token_rel_pos_ids: torch.Tensor,
 			ll_sims: torch.Tensor,
 			lr_paths_types: torch.Tensor,
 			lr_paths_len: torch.Tensor,
@@ -40,6 +41,7 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 		output_tensor = self.module(
 			code_token_ids=code_token_ids,
 			code_token_pos_ids=code_token_pos_ids,
+			code_token_rel_pos_ids=code_token_rel_pos_ids,
 			ll_sims=ll_sims,
 			lr_paths_types=lr_paths_types,
 			lr_paths_len=lr_paths_len,

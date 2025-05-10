@@ -217,6 +217,7 @@ class DataHandler:
 		# do memory intensive part in chunks
 		os.makedirs(self.save_dir, exist_ok=True)
 		all_node_types = set()
+		global_max_rel_pos = 0
 
 		for start in range(0, len(data), num_rows_per_file):
 			chunk_data = data.iloc[start:start + num_rows_per_file].copy()  # copy so that edits are not on data
@@ -225,17 +226,21 @@ class DataHandler:
 			self.map_dfg_node_code_token_idices(chunk_data)
 			self.add_special_tokens(chunk_data)
 			self.compute_attention_masks(chunk_data)
+			chunk_data['code_tokens_rel_pos_ids'] = chunk_data['code_tokens_pos_ids'].apply(self.compute_relative_distances)
+			chunk_max_rel_pos = max([row[0][-1] for row in chunk_data['code_tokens_rel_pos_ids']])
+			global_max_rel_pos = max(global_max_rel_pos, chunk_max_rel_pos)
 
-			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'text_tokens', 'text_tokens_pos_ids',
-									 'lr_paths_types', 'lr_paths_len', 'll_sims', 'dfg_node_mask', 'attn_code_tokens',
-									 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']]
+			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'code_tokens_rel_pos_ids', 'text_tokens',
+									 'text_tokens_pos_ids', 'lr_paths_types', 'lr_paths_len', 'll_sims', 'dfg_node_mask',
+									 'attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']]
 
-			for col in ['lr_paths_types', 'attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']:
+			for col in ['code_tokens_rel_pos_ids', 'lr_paths_types', 'attn_code_tokens', 'attn_ast_leaves',
+						'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']:
 				chunk_data[col] = chunk_data[col].apply(str)
 
 			chunk_data.to_parquet(os.path.join(self.save_dir, 'from_' + str(start) + '.parquet'), engine='fastparquet', row_group_offsets=100)
 
-		return all_node_types
+		return all_node_types, global_max_rel_pos
 
 	def parse_list_of_lists(self, s, type_=int):
 		list_of_lists = s[1:-2].split('], ')
@@ -350,6 +355,14 @@ class DataHandler:
 			axis=1
 		)
 
+	def compute_relative_distances(self, pos_ids_str):
+		pos_ids = list(map(int, pos_ids_str.split(',')))
+		distances = []
+		for i in range(len(pos_ids)):
+			# account for padding distance id of 0 --> 0 should not be assigned as a relative distance
+			distances.append([abs(pos_ids[i] - pos_ids[j]) + 1 for j in range(len(pos_ids))])
+
+		return distances
 
 	def add_special_tokens(self, data):
 		data['code_tokens'] = data['code_tokens'].apply(lambda x: str(self.tokenizer.bos_token_id) + ',' + x + ',' + str(self.tokenizer.eos_token_id))

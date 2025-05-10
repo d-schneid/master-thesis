@@ -23,13 +23,14 @@ if __name__ == '__main__':
 
 	data = data_handler.convert_tokens_to_strings(data)
 	data = data_handler.clean_data(data)
-	all_node_types = data_handler.store_preprocessed_data(data, num_rows_per_file=10000)
+	all_node_types, max_code_token_rel_pos = data_handler.store_preprocessed_data(data, num_rows_per_file=10000)
 	max_ast_depth = data_handler.convert_node_types_to_indices(all_node_types)
 	data_handler.reduce_ll_sims()
 
 	metadata = {
 		"num_ast_node_types": int(len(all_node_types)),
 		"max_ast_depth": int(max_ast_depth),
+		"max_code_token_rel_pos": int(max_code_token_rel_pos),
 	}
 	with open(os.path.join(data_dir, 'metadata.json'), 'w') as f:
 		json.dump(metadata, f)

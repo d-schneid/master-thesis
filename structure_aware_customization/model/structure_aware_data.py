@@ -18,7 +18,7 @@ _, HAVE_TE = safe_import("transformer_engine")
 if TYPE_CHECKING:
 	from nemo.collections.common.tokenizers.tokenizer_spec import TokenizerSpec
 
-with open('../data/pretraining/metadata.json', 'r') as f_metadata:
+with open('../../data/pretraining/metadata.json', 'r') as f_metadata:
 	metadata = json.load(f_metadata)
 
 PAD_TOK_ID_AST = metadata['num_ast_node_types']
@@ -61,9 +61,9 @@ class StructureAwareDataModule(MockDataModule):
 		)
 
 	def setup(self, stage: str = "") -> None:
-		self._train_ds = StructureAwareDataset('../data/pretraining')
-		self._validation_ds = StructureAwareDataset('../data/pretraining')
-		self._test_ds = StructureAwareDataset('../data/pretraining')
+		self._train_ds = StructureAwareDataset('../../data/pretraining')
+		self._validation_ds = StructureAwareDataset('../../data/pretraining')
+		self._test_ds = StructureAwareDataset('../../data/pretraining')
 
 	def train_dataloader(self) -> TRAIN_DATALOADERS:
 		if not hasattr(self, "_train_ds"):
@@ -106,6 +106,9 @@ class StructureAwareDataset(Dataset):
 											apply(lambda x: list(map(int, x.split(',')))).
 											apply(lambda x: torch.tensor(x)))
 
+		self.data['code_tokens_rel_pos_ids'] = (self.data['code_tokens_rel_pos_ids'].apply(ast.literal_eval).
+												apply(lambda x: torch.tensor(x)))
+
 		self.data['ll_sims'] = (self.data['ll_sims'].
 								apply(lambda x: [list(map(float, sublist.split(','))) for sublist in x.split(';')]).
 								apply(pad_inner_lists, padding_value=self.padding_value, padding_side='left'))
@@ -140,6 +143,7 @@ class StructureAwareDataset(Dataset):
 		batch = {
 			'code_token_ids': code_tokens,
 			'code_token_pos_ids': self.data.iloc[idx]['code_tokens_pos_ids'],
+			'code_token_rel_pos_ids': self.data.iloc[idx]['code_tokens_rel_pos_ids'],
 			'll_sims': self.data.iloc[idx]['ll_sims'],
 			'lr_paths_types': self.data.iloc[idx]['lr_paths_types'],
 			'lr_paths_len': self.data.iloc[idx]['lr_paths_len'],
@@ -194,7 +198,7 @@ class StructureAwareDataset(Dataset):
 		third_col_matrix = torch.cat((attn_code_dfg, attn_ast_dfg, attn_dfg_edges), dim=1)
 		attn_mask = torch.cat((first_col_matrix, second_col_matrix, third_col_matrix), dim=2)
 
-		batch_dict['attention_mask'] = attn_mask
+		batch_dict['attention_mask'] = attn_mask.unsqueeze(1) # broadcast across all attention heads
 
 		keys_to_remove = ['attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']
 		for key in keys_to_remove:

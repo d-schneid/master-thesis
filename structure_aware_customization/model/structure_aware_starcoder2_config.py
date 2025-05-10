@@ -1,13 +1,14 @@
 import json
-from typing import Callable, Dict
+from typing import Callable, Dict, Union
 from dataclasses import dataclass, field
 
 from structure_aware_mcore_gpt_model import StructureAwareMCoreGPTModel
+from structure_aware_customization.self_attention.structure_aware_layer_spec import structure_aware_layer_spec
 
 import torch
 from megatron.core.transformer.spec_utils import ModuleSpec
 
-from nemo.collections.llm import Starcoder2Config3B
+from nemo.collections.llm import Starcoder2Config3B, GPTConfig
 from nemo.utils.import_utils import safe_import
 from nemo.utils import logging
 from nemo.lightning import get_vocab_size
@@ -64,8 +65,8 @@ def structure_aware_gpt_data_step(dataloader_iter) -> Dict[str, torch.Tensor]:
 		required_host_keys.add('max_seqlen')
 
 	if parallel_state.is_pipeline_first_stage():
-		required_device_keys.update(("code_token_ids", "code_token_pos_ids", "ll_sims", "lr_paths_types",
-									 "lr_paths_len", "dfg_node_mask"))
+		required_device_keys.update(("code_token_ids", "code_token_pos_ids", "code_token_rel_pos_ids",
+									 "ll_sims", "lr_paths_types", "lr_paths_len", "dfg_node_mask"))
 	if parallel_state.is_pipeline_last_stage():
 		required_device_keys.update(("labels", "loss_mask"))
 
@@ -112,6 +113,7 @@ def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
 	forward_args = {
 		"code_token_ids": batch["code_token_ids"],
 		"code_token_pos_ids": batch["code_token_pos_ids"],
+		"code_token_rel_pos_ids": batch["code_token_rel_pos_ids"],
 		"ll_sims": batch["ll_sims"],
 		"lr_paths_types": batch["lr_paths_types"],
 		"lr_paths_len": batch["lr_paths_len"],
@@ -136,19 +138,22 @@ def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
 @dataclass
 class StructureAwareStarcoder2Config(Starcoder2Config3B):
 
+	transformer_layer_spec: Union[ModuleSpec, Callable[["GPTConfig"], ModuleSpec]] = structure_aware_layer_spec
 	forward_step_fn: Callable = structure_aware_gpt_forward_step
 	data_step_fn: Callable = structure_aware_gpt_data_step
 	num_ast_node_types: int = field(init=False)
 	max_ast_depth: int = field(init=False)
+	max_code_token_rel_pos: int = field(init=False)
 
 	def __post_init__(self):
 		super().__post_init__()
 
-		with open('../data/pretraining/metadata.json', 'r') as f_metadata:
+		with open('../../data/pretraining/metadata.json', 'r') as f_metadata:
 			metadata = json.load(f_metadata)
 
 		self.num_ast_node_types = metadata['num_ast_node_types']
 		self.max_ast_depth = metadata['max_ast_depth']
+		self.max_code_token_rel_pos = metadata['max_code_token_rel_pos']
 
 	def configure_model(self, tokenizer, pre_process=None, post_process=None) -> "StructureAwareMCoreGPTModel":
 		if self.enable_cuda_graph:
