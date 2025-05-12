@@ -25,7 +25,6 @@ if __name__ == '__main__':
 	data = data_handler.clean_data(data)
 	all_node_types, max_code_token_rel_pos = data_handler.store_preprocessed_data(data, num_rows_per_file=10000)
 	max_ast_depth = data_handler.convert_node_types_to_indices(all_node_types)
-	data_handler.reduce_ll_sims()
 
 	metadata = {
 		"num_ast_node_types": int(len(all_node_types)),

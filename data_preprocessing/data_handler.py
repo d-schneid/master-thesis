@@ -4,6 +4,7 @@ import re
 import tokenize
 import ast
 from io import StringIO
+from types import SimpleNamespace
 
 import numpy as np
 from tqdm import tqdm
@@ -153,6 +154,8 @@ class DataHandler:
 		return data[data['dfg_edges'].apply(lambda row: row != [])].reset_index(drop=True)
 
 	def get_ll_sim(self, lr_path1, lr_path2):
+		node_types = [node.type for node in lr_path1 + lr_path2]
+		if '<START_AST>' in node_types or '<END_AST>' in node_types: return 0
 		common = 1 # root is always common
 		for i in range(2, min(len(lr_path1), len(lr_path2)) + 1):
 			if lr_path1[-i] == lr_path2[-i]:
@@ -168,8 +171,8 @@ class DataHandler:
 		all_node_types = set()
 
 		for i, row in tqdm(enumerate(data.itertuples())):
-			num_ast_leaves = min(len(row.ast_leaves), 512)
-			curr_lr_paths = [self.get_lr_path(leaf) for leaf in row.ast_leaves]
+			curr_lr_paths = [[SimpleNamespace(type='<START_AST>')]] + [self.get_lr_path(leaf) for leaf in row.ast_leaves] + [[SimpleNamespace(type='<END_AST>')]]
+			num_ast_leaves = min(len(curr_lr_paths), 512)
 			curr_ll_sims = np.ones((num_ast_leaves, num_ast_leaves))
 
 			for i in range(num_ast_leaves - 1):
@@ -177,7 +180,7 @@ class DataHandler:
 					curr_ll_sims[i, j] = curr_ll_sims[j, i] = self.get_ll_sim(curr_lr_paths[i], curr_lr_paths[j])
 
 			ll_sims.append(';'.join([','.join(list(map(str, row))) for row in curr_ll_sims]))
-			lr_paths.append([['<START_AST>']] + [[node.type for node in path] for path in curr_lr_paths] + [['<END_AST>']])
+			lr_paths.append([[node.type for node in path] for path in curr_lr_paths])
 			all_node_types.update(set(np.concatenate(lr_paths[-1])))
 
 		data.drop(columns=['ast_leaves'], inplace=True)

@@ -2,10 +2,11 @@ import warnings
 from typing import Optional
 
 from structure_aware_customization.self_attention.structure_aware_self_attention import StructureAwareSelfAttention
+from structure_aware_customization.transformer.structure_aware_transformer_layer import StructureAwareTransformerLayer
 
 from megatron.core.transformer.spec_utils import ModuleSpec
 from megatron.core.models.gpt.gpt_layer_specs import get_mlp_module_spec
-from megatron.core.transformer.transformer_layer import TransformerLayer, TransformerLayerSubmodules
+from megatron.core.transformer.transformer_layer import TransformerLayerSubmodules
 from megatron.core.utils import is_te_min_version
 from megatron.core.transformer.attention import SelfAttentionSubmodules
 from megatron.core.transformer.enums import AttnMaskType
@@ -69,7 +70,7 @@ def get_gpt_layer_with_transformer_engine_spec(
 	qk_norm = TENorm if is_te_min_version("1.9.0") else FusedLayerNorm
 
 	return ModuleSpec(
-		module=TransformerLayer,
+		module=StructureAwareTransformerLayer,
 		submodules=TransformerLayerSubmodules(
 			self_attention=ModuleSpec(
 				module=StructureAwareSelfAttention,

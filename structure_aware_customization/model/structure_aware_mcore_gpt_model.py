@@ -1,4 +1,3 @@
-import copy
 from collections import OrderedDict
 from typing import Optional, Literal
 
@@ -12,6 +11,8 @@ from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.transformer.spec_utils import ModuleSpec
+
+from structure_aware_customization.transformer.structure_aware_transformer_block import StructureAwareTransformerBlock
 
 
 class StructureAwareMCoreGPTModel(MCoreGPTModel):
@@ -78,14 +79,12 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
 			)
 
-		config_copy = copy.copy(self.config)
-		config_copy.hidden_size = 1
-		self.code_token_rel_pos_embedding = LanguageModelEmbedding(
-			config=config_copy,
-			vocab_size=self.config.max_code_token_rel_pos + 1,  # padding
-			max_sequence_length=self.max_sequence_length,
-			position_embedding_type='none',
-			scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
+		# Structure-aware Transformer.
+		self.decoder = StructureAwareTransformerBlock(
+			config=self.config,
+			spec=transformer_layer_spec,
+			pre_process=self.pre_process,
+			post_process=self.post_process,
 		)
 
 	def forward(
@@ -177,6 +176,8 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 			rotary_pos_sin=rotary_pos_sin,
 			packed_seq_params=packed_seq_params,
 			sequence_len_offset=sequence_len_offset,
+			code_token_rel_pos_ids=code_token_rel_pos_ids,
+			ll_sims=ll_sims,
 			**(extra_block_kwargs or {}),
 		)
 

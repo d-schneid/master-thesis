@@ -165,9 +165,7 @@ class StructureAwareDataset(Dataset):
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
 			if key not in ['code_token_ids', 'code_token_pos_ids', 'dfg_node_mask', 'lr_paths_len', 'labels', 'loss_mask']:
-				if key == 'll_sims':
-					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value, padding_side='left')
-				elif key == 'lr_paths_types':
+				if key == 'lr_paths_types':
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=PAD_TOK_ID_AST)
 				else:
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value)
