@@ -65,8 +65,11 @@ def structure_aware_gpt_data_step(dataloader_iter) -> Dict[str, torch.Tensor]:
 		required_host_keys.add('max_seqlen')
 
 	if parallel_state.is_pipeline_first_stage():
-		required_device_keys.update(("code_token_ids", "code_token_pos_ids", "code_token_rel_pos_ids",
-									 "ll_sims", "lr_paths_types", "lr_paths_len", "dfg_node_mask"))
+		required_device_keys.update(("code_token_ids", "code_token_rel_pos_ids", "ll_sims", "lr_paths_types",
+									 "lr_paths_len", "dfg_node_mask", "attention_bias"))
+		if 'text_token_ids' in _batch:
+			required_device_keys.update(("text_token_ids", "text_token_rel_pos_ids"))
+
 	if parallel_state.is_pipeline_last_stage():
 		required_device_keys.update(("labels", "loss_mask"))
 
@@ -112,14 +115,18 @@ def get_packed_seq_params(batch):
 def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
 	forward_args = {
 		"code_token_ids": batch["code_token_ids"],
-		"code_token_pos_ids": batch["code_token_pos_ids"],
 		"code_token_rel_pos_ids": batch["code_token_rel_pos_ids"],
 		"ll_sims": batch["ll_sims"],
 		"lr_paths_types": batch["lr_paths_types"],
 		"lr_paths_len": batch["lr_paths_len"],
 		"dfg_node_mask": batch["dfg_node_mask"],
+		"attention_bias": batch["attention_bias"],
 		"labels": batch["labels"],
 	}
+
+	if 'text_token_ids' in batch:
+		forward_args["text_token_ids"] = batch["text_token_ids"]
+		forward_args["text_token_rel_pos_ids"] = batch["text_token_rel_pos_ids"]
 
 	if 'attention_mask' not in batch:
 		assert (
@@ -141,6 +148,7 @@ class StructureAwareStarcoder2Config(Starcoder2Config3B):
 	transformer_layer_spec: Union[ModuleSpec, Callable[["GPTConfig"], ModuleSpec]] = structure_aware_layer_spec
 	forward_step_fn: Callable = structure_aware_gpt_forward_step
 	data_step_fn: Callable = structure_aware_gpt_data_step
+	position_embedding_type: str = "none"
 	num_ast_node_types: int = field(init=False)
 	max_ast_depth: int = field(init=False)
 	max_code_token_rel_pos: int = field(init=False)

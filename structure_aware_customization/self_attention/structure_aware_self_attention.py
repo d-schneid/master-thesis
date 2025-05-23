@@ -29,25 +29,18 @@ class StructureAwareSelfAttention(SelfAttention):
 		config_copy = copy.copy(config)
 		config_copy.hidden_size = 1 # scalar embedding
 
-		self.code_token_rel_pos_embedding = LanguageModelEmbedding(
+		vocab_size_code_text_rel_pos = config.max_code_token_rel_pos + 1 # padding
+		self.code_text_token_rel_pos_embedding = LanguageModelEmbedding(
 			config=config_copy,
-			vocab_size=config.max_code_token_rel_pos + 1,  # padding
+			vocab_size=vocab_size_code_text_rel_pos if vocab_size_code_text_rel_pos % 2 == 0 else vocab_size_code_text_rel_pos + 1,  # even
 			max_sequence_length=-1,
 			position_embedding_type='none',
 			scatter_to_sequence_parallel=True,
 		)
 
-		self.ll_sims_weight_param = LanguageModelEmbedding(
+		self.ll_sims_weight_bias = LanguageModelEmbedding(
 			config=config_copy,
-			vocab_size=1,  # one parameter
-			max_sequence_length=-1,
-			position_embedding_type='none',
-			scatter_to_sequence_parallel=True,
-		)
-
-		self.ll_sims_bias_param = LanguageModelEmbedding(
-			config=config_copy,
-			vocab_size=1,  # one parameter
+			vocab_size=2,  # parameter for weight and bias
 			max_sequence_length=-1,
 			position_embedding_type='none',
 			scatter_to_sequence_parallel=True,
@@ -59,30 +52,63 @@ class StructureAwareSelfAttention(SelfAttention):
 			attention_mask,
 			code_token_rel_pos_ids,
 			ll_sims,
+			attention_bias,
+			text_token_rel_pos_ids=None,
 			key_value_states=None,
 			inference_params=None,
 			rotary_pos_emb=None,
 			rotary_pos_cos=None,
 			rotary_pos_sin=None,
-			attention_bias=None,
 			packed_seq_params=None,
 			sequence_len_offset=None,
 	):
-		code_token_rel_pos_embedding= self.code_token_rel_pos_embedding(input_ids=code_token_rel_pos_ids, position_ids=None)
-		code_token_rel_pos_embedding = code_token_rel_pos_embedding.squeeze(-1)
-		code_token_rel_pos_embedding = code_token_rel_pos_embedding.permute(1, 0, 2)
+		code_token_rel_pos_embedding= self.code_text_token_rel_pos_embedding(input_ids=code_token_rel_pos_ids, position_ids=None)
+		code_token_rel_pos_embedding = code_token_rel_pos_embedding.permute(1, 3, 0, 2)
 
-		ll_sims_weight_param = self.ll_sims_weight_param(input_ids=torch.tensor([0], device=ll_sims.device), position_ids=None)
-		ll_sims_bias_param = self.ll_sims_bias_param(input_ids=torch.tensor([0], device=ll_sims.device), position_ids=None)
-		weighted_ll_sims = ll_sims_weight_param * ll_sims + ll_sims_bias_param
+		ll_sims_weight_param = self.ll_sims_weight_bias(input_ids=torch.tensor([0], device=ll_sims.device), position_ids=None)
+		ll_sims_bias_param = self.ll_sims_weight_bias(input_ids=torch.tensor([1], device=ll_sims.device), position_ids=None)
+		weighted_ll_sims = ll_sims_weight_param * ll_sims.unsqueeze(1) + ll_sims_bias_param
 
-		batch, _, height, width = attention_mask.shape
-		_, height_code_token, width_code_token = code_token_rel_pos_embedding.shape
-		_, height_ll_sims, width_ll_sims = weighted_ll_sims.shape
-		attention_bias = torch.zeros(batch, height, width, dtype=ll_sims.dtype, device=ll_sims.device)
-		attention_bias[:, :height_code_token, :width_code_token] = code_token_rel_pos_embedding
-		attention_bias[:, height_code_token:height_code_token + height_ll_sims, width_code_token:width_code_token + width_ll_sims] = weighted_ll_sims
-		attention_bias = attention_bias.unsqueeze(1)
+		batch, head, height_code_token, width_code_token = code_token_rel_pos_embedding.shape
+
+		if text_token_rel_pos_ids is not None:
+			text_token_rel_pos_embedding = self.code_text_token_rel_pos_embedding(input_ids=text_token_rel_pos_ids, position_ids=None)
+			text_token_rel_pos_embedding = text_token_rel_pos_embedding.permute(1, 3, 0, 2)
+			batch, head, height_text_token, width_text_token = text_token_rel_pos_embedding.shape
+			target_text_tokens = attention_bias[:, :, -height_text_token:, -width_text_token:]
+			mask_text_tokens = target_text_tokens > -1
+			updated_text_tokens = torch.where(
+				mask_text_tokens,
+				target_text_tokens + text_token_rel_pos_embedding,
+				target_text_tokens
+			)
+			attention_bias[:, :, -height_text_token:, -width_text_token:] = updated_text_tokens
+
+			target_code_tokens = attention_bias[:, :, -(height_code_token + height_text_token):-height_text_token, -(width_code_token + width_text_token):-width_text_token]
+		else:
+			target_code_tokens = attention_bias[:, :, -height_code_token:, -width_code_token:]
+
+		mask_code_tokens = target_code_tokens > -1 # only update tokens that shall attend to each other
+		updated_code_tokens = torch.where(
+			mask_code_tokens,
+			target_code_tokens + code_token_rel_pos_embedding,
+			target_code_tokens
+		)
+
+		if text_token_rel_pos_ids is not None:
+			attention_bias[:, :, -(height_code_token + height_text_token):-height_text_token, -(width_code_token + width_text_token):-width_text_token] = updated_code_tokens
+		else:
+			attention_bias[:, :, -height_code_token:, -width_code_token:] = updated_code_tokens
+
+		batch, head, height_ll_sims, width_ll_sims = weighted_ll_sims.shape
+		target_ll_sims = attention_bias[:, :, :height_ll_sims, :width_ll_sims]
+		mask_ll_sims = target_ll_sims > -1 # only update tokens that shall attend to each other
+		updated_ll_sims = torch.where(
+			mask_ll_sims,
+			target_ll_sims + weighted_ll_sims,
+			target_ll_sims
+		)
+		attention_bias[:, :, :height_ll_sims, :width_ll_sims] = updated_ll_sims
 
 		output, bias =  super().forward(
 			hidden_states=hidden_states,

@@ -3,33 +3,45 @@ import os
 
 from data_preprocessing.data_handler import DataHandler
 from data_preprocessing.parser import Parser
+from data_preprocessing.attn_masks.code_completion_attn_mask import CodeCompletionAttnMask
+from data_preprocessing.attn_masks.code_text_attn_mask import CodeTextAttnMask
 
 
 if __name__ == '__main__':
-	data_dir = '../data/pretraining/'
+	attn_mask_builder = CodeTextAttnMask()
+	data_dir = os.path.join('../data/pretraining/', attn_mask_builder.save_dir_suffix)
 
-	data_handler = DataHandler(save_dir=data_dir)
-	data = data_handler.read_dataset(max_samples_per_split=50)
-	data = data_handler.preprocess(data)
+	global_num_node_types = -1
+	global_max_code_token_rel_pos = -1
+	global_max_ast_depth = -1
 
-	parser = Parser()
-	parser.add_structure(data)
+	for split in ['train', 'validation', 'test']:
+		data_handler = DataHandler(save_dir=os.path.join(data_dir, split), attn_mask_builder=attn_mask_builder)
+		data = data_handler.read_dataset(split=split, max_samples=500)
+		data = data_handler.preprocess(data)
 
-	data['code_tokens'] = parser.tokenize_codes_texts(list(data['code']))
-	data['text_tokens'] = parser.tokenize_codes_texts(list(data['text']))
+		parser = Parser()
+		parser.add_structure(data)
 
-	parser.add_code_tokens_ranges(data)
-	parser.map_ast_leaf_code_token_indices(data)
+		data['code_tokens'] = parser.tokenize_codes_texts(list(data['code']))
+		data['text_tokens'] = parser.tokenize_codes_texts(list(data['text']))
 
-	data = data_handler.convert_tokens_to_strings(data)
-	data = data_handler.clean_data(data)
-	all_node_types, max_code_token_rel_pos = data_handler.store_preprocessed_data(data, num_rows_per_file=10000)
-	max_ast_depth = data_handler.convert_node_types_to_indices(all_node_types)
+		parser.add_code_tokens_ranges(data)
+		parser.map_ast_leaf_code_token_indices(data)
+
+		data = data_handler.convert_tokens_to_strings(data)
+		data = data_handler.clean_data(data)
+		split_all_node_types, split_max_code_token_rel_pos = data_handler.store_preprocessed_data(data, num_rows_per_file=10000)
+		split_max_ast_depth = data_handler.convert_node_types_to_indices(split_all_node_types)
+
+		global_num_node_types = max(global_num_node_types, len(split_all_node_types))
+		global_max_code_token_rel_pos = max(global_max_code_token_rel_pos, split_max_code_token_rel_pos)
+		global_max_ast_depth = max(global_max_ast_depth, split_max_ast_depth)
 
 	metadata = {
-		"num_ast_node_types": int(len(all_node_types)),
-		"max_ast_depth": int(max_ast_depth),
-		"max_code_token_rel_pos": int(max_code_token_rel_pos),
+		"num_ast_node_types": int(global_num_node_types),
+		"max_ast_depth": int(global_max_ast_depth),
+		"max_code_token_rel_pos": int(global_max_code_token_rel_pos),
 	}
 	with open(os.path.join(data_dir, 'metadata.json'), 'w') as f:
 		json.dump(metadata, f)

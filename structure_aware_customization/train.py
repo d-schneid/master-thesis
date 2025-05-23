@@ -1,6 +1,8 @@
-from structure_aware_starcoder2_config import StructureAwareStarcoder2Config
-from structure_aware_data import StructureAwareDataModule
-from structure_aware_starcoder2_model import StructureAwareStarcoder2Model
+from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
+from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
+from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
+from structure_aware_customization.dataset.structure_aware_cc_dataset import StructureAwareCCDataset
+from structure_aware_customization.dataset.structure_aware_ct_dataset import StructureAwareCTDataset
 
 from megatron.core.optimizer import OptimizerConfig
 
@@ -10,12 +12,16 @@ from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenize
 
 
 if __name__ == "__main__":
-    data = StructureAwareDataModule()
+    data = StructureAwareDataModule(train_dataset=StructureAwareCCDataset(split='train'),
+                                    validation_dataset=StructureAwareCCDataset(split='validation'),
+                                    test_dataset=StructureAwareCCDataset(split='test'),
+                                    micro_batch_size=4,
+                                    global_batch_size=16,)
 
     model = StructureAwareStarcoder2Model(config=StructureAwareStarcoder2Config())
 
     strategy = nl.MegatronStrategy(
-        tensor_model_parallel_size=1,
+        tensor_model_parallel_size=2,
         pipeline_model_parallel_size=1,
 	    virtual_pipeline_model_parallel_size=None,
 	    context_parallel_size=1,
@@ -32,7 +38,7 @@ if __name__ == "__main__":
 
     trainer = nl.Trainer(
         num_nodes=1,
-	    devices=8,
+	    devices=4,
         max_steps=4,
         accelerator="gpu",
         strategy=strategy,

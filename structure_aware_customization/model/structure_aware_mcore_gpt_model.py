@@ -57,23 +57,25 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 		if self.pre_process:
 			self.dfg_node_embedding = LanguageModelEmbedding(
 				config=self.config,
-				vocab_size=3, # unique embedding for all DFG nodes + padding + <SEP> token
+				vocab_size=4, # unique embedding for all DFG nodes + padding + <SEP> token + even
 				max_sequence_length=self.max_sequence_length,
 				position_embedding_type='none',
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
 			)
 
+			vocab_size_ast_node_type = self.config.num_ast_node_types + 1 # padding
 			self.ast_node_type_embedding = LanguageModelEmbedding(
 				config=self.config,
-				vocab_size=self.config.num_ast_node_types + 1, # padding
+				vocab_size=vocab_size_ast_node_type if vocab_size_ast_node_type % 2 == 0 else vocab_size_ast_node_type + 1,  # even
 				max_sequence_length=self.max_sequence_length,
 				position_embedding_type='none',
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
 			)
 
+			vocab_size_ast_node_depth = self.config.max_ast_depth
 			self.ast_node_depth_embedding = LanguageModelEmbedding(
 				config=self.config,
-				vocab_size=self.config.max_ast_depth,
+				vocab_size=vocab_size_ast_node_depth if vocab_size_ast_node_depth % 2 == 0 else vocab_size_ast_node_depth + 1,  # even
 				max_sequence_length=self.max_sequence_length,
 				position_embedding_type='none',
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
@@ -90,13 +92,15 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 	def forward(
 			self,
 			code_token_ids: Tensor,
-			code_token_pos_ids: Tensor,
 			code_token_rel_pos_ids: Tensor,
 			ll_sims: Tensor,
 			lr_paths_types: Tensor,
 			lr_paths_len: Tensor,
 			dfg_node_mask: Tensor,
+			attention_bias: Tensor,
 			attention_mask: Tensor,
+			text_token_ids: Tensor = None,
+			text_token_rel_pos_ids: Tensor = None,
 			decoder_input: Tensor = None,
 			labels: Tensor = None,
 			inference_params: InferenceParams = None,
@@ -111,7 +115,11 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 		if decoder_input is not None:
 			pass
 		elif self.pre_process:
-			code_token_embedding = self.embedding(input_ids=code_token_ids, position_ids=code_token_pos_ids)
+			code_text_token_embedding = self.embedding(input_ids=code_token_ids, position_ids=None)
+
+			if text_token_ids is not None:
+				text_token_embedding = self.embedding(input_ids=text_token_ids, position_ids=None)
+				code_text_token_embedding = torch.cat((code_text_token_embedding, text_token_embedding), dim=0)
 
 			ast_node_type_embedding = self.ast_node_type_embedding(input_ids=lr_paths_types, position_ids=None)
 			len_longest_lr_path = lr_paths_types.shape[-1]
@@ -127,7 +135,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 
 			dfg_node_embedding = self.dfg_node_embedding(input_ids=dfg_node_mask, position_ids=None)
 
-			decoder_input = torch.cat((code_token_embedding, final_leaf_embedding, dfg_node_embedding), dim=0)
+			decoder_input = torch.cat((final_leaf_embedding, dfg_node_embedding, code_text_token_embedding), dim=0)
 		else:
 			# intermediate stage of pipeline
 			# decoder will get hidden_states from encoder.input_tensor
@@ -177,7 +185,9 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 			packed_seq_params=packed_seq_params,
 			sequence_len_offset=sequence_len_offset,
 			code_token_rel_pos_ids=code_token_rel_pos_ids,
+			text_token_rel_pos_ids=text_token_rel_pos_ids,
 			ll_sims=ll_sims,
+			attention_bias=attention_bias,
 			**(extra_block_kwargs or {}),
 		)
 
@@ -196,7 +206,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 			payload = OrderedDict(
 				{
 					'input_ids': code_token_ids,
-					'position_ids': code_token_pos_ids,
+					'position_ids': None,
 					'attention_mask': attention_mask,
 					'decoder_input': decoder_input,
 					'logits': logits,

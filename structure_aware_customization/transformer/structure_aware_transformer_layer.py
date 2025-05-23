@@ -9,13 +9,14 @@ class StructureAwareTransformerLayer(TransformerLayer):
 			hidden_states,
 			code_token_rel_pos_ids,
 			ll_sims,
+			attention_bias,
+			text_token_rel_pos_ids=None,
 			attention_mask=None,
 			context=None,
 			context_mask=None,
 			rotary_pos_emb=None,
 			rotary_pos_cos=None,
 			rotary_pos_sin=None,
-			attention_bias=None,
 			inference_params=None,
 			packed_seq_params=None,
 			sequence_len_offset=None,
@@ -38,6 +39,7 @@ class StructureAwareTransformerLayer(TransformerLayer):
 			packed_seq_params=packed_seq_params,
 			sequence_len_offset=sequence_len_offset,
 			code_token_rel_pos_ids=code_token_rel_pos_ids,
+			text_token_rel_pos_ids=text_token_rel_pos_ids,
 			ll_sims=ll_sims,
 		)
 

@@ -1,7 +1,7 @@
 import warnings
 from typing import Optional
 
-from structure_aware_customization.self_attention.structure_aware_self_attention import StructureAwareSelfAttention
+from structure_aware_self_attention import StructureAwareSelfAttention
 from structure_aware_customization.transformer.structure_aware_transformer_layer import StructureAwareTransformerLayer
 
 from megatron.core.transformer.spec_utils import ModuleSpec
@@ -74,7 +74,7 @@ def get_gpt_layer_with_transformer_engine_spec(
 		submodules=TransformerLayerSubmodules(
 			self_attention=ModuleSpec(
 				module=StructureAwareSelfAttention,
-				params={"attn_mask_type": AttnMaskType.arbitrary},
+				params={"attn_mask_type": AttnMaskType.no_mask},
 				submodules=SelfAttentionSubmodules(
 					linear_qkv=TELayerNormColumnParallelLinear,
 					core_attention=TEDotProductAttention,

@@ -10,6 +10,10 @@ import numpy as np
 from tqdm import tqdm
 from transformers import AutoTokenizer
 import pandas as pd
+
+from data_preprocessing.attn_masks.attn_mask import AttnMask
+from data_preprocessing.attn_masks.code_completion_attn_mask import CodeCompletionAttnMask
+
 tqdm.pandas()
 from datasets import load_dataset
 
@@ -19,28 +23,29 @@ PAD_TOK_ID_DFG = 2
 
 class DataHandler:
 
-	def __init__(self, save_dir, dataset='code_search_net', lang='python', tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b')):
+	def __init__(self, save_dir, dataset='code_search_net', lang='python',
+				 tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b'), attn_mask_builder: AttnMask=CodeCompletionAttnMask()):
 		self.save_dir = save_dir
 		self.dataset = dataset
 		self.lang = lang
 		self.tokenizer = tokenizer
+		self.attn_mask_builder = attn_mask_builder
 
-	def read_dataset(self, max_samples_per_split=None):
+	def read_dataset(self, split, max_samples=None):
 		np.random.seed(10)
 		dataset = load_dataset(self.dataset, self.lang)
 		rows = []
 
-		for split in ['train', 'test', 'validation']:
-			num_samples_in_split = len(dataset[split])
-			indices = list(range(num_samples_in_split))
-			if (max_samples_per_split is not None) and (num_samples_in_split > max_samples_per_split):
-				indices = list(map(int, np.random.choice(indices, max_samples_per_split, replace=False)))
-			pbar = tqdm(indices)
-			pbar.set_description('Reading split=' + split)
+		num_samples_in_split = len(dataset[split])
+		indices = list(range(num_samples_in_split))
+		if (max_samples is not None) and (num_samples_in_split > max_samples):
+			indices = list(map(int, np.random.choice(indices, max_samples, replace=False)))
+		pbar = tqdm(indices)
+		pbar.set_description('Reading split=' + split)
 
-			for i in pbar:
-				sample = dataset[split][i]
-				rows.append([sample['func_documentation_string'], sample['func_code_string']])
+		for i in pbar:
+			sample = dataset[split][i]
+			rows.append([sample['func_documentation_string'], sample['func_code_string']])
 
 		return pd.DataFrame(rows, columns=['text', 'code'])
 
@@ -228,17 +233,18 @@ class DataHandler:
 			all_node_types.update(chunk_node_types)
 			self.map_dfg_node_code_token_idices(chunk_data)
 			self.add_special_tokens(chunk_data)
-			self.compute_attention_masks(chunk_data)
+			chunk_data = self.attn_mask_builder.compute_attention_masks(chunk_data)
 			chunk_data['code_tokens_rel_pos_ids'] = chunk_data['code_tokens_pos_ids'].apply(self.compute_relative_distances)
+			chunk_data['text_tokens_rel_pos_ids'] = chunk_data['text_tokens_pos_ids'].apply(self.compute_relative_distances)
 			chunk_max_rel_pos = max([row[0][-1] for row in chunk_data['code_tokens_rel_pos_ids']])
 			global_max_rel_pos = max(global_max_rel_pos, chunk_max_rel_pos)
 
-			chunk_data = chunk_data[['code_tokens', 'code_tokens_pos_ids', 'code_tokens_rel_pos_ids', 'text_tokens',
-									 'text_tokens_pos_ids', 'lr_paths_types', 'lr_paths_len', 'll_sims', 'dfg_node_mask',
-									 'attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']]
+			cols = (['code_tokens', 'code_tokens_rel_pos_ids', 'lr_paths_types', 'lr_paths_len', 'll_sims',
+					 'dfg_node_mask',]
+					+ self.attn_mask_builder.get_cols())
+			chunk_data = chunk_data[cols]
 
-			for col in ['code_tokens_rel_pos_ids', 'lr_paths_types', 'attn_code_tokens', 'attn_ast_leaves',
-						'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']:
+			for col in ['code_tokens_rel_pos_ids', 'lr_paths_types'] + self.attn_mask_builder.get_cols():
 				chunk_data[col] = chunk_data[col].apply(str)
 
 			chunk_data.to_parquet(os.path.join(self.save_dir, 'from_' + str(start) + '.parquet'), engine='fastparquet', row_group_offsets=100)
@@ -291,79 +297,29 @@ class DataHandler:
 				chunk_data['ll_sims'] = chunk_data['ll_sims'].apply(self.upper_triangle)
 				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
 
-	def get_concat_stored_data(self):
+	def get_concat_stored_data(self, split='train'):
 		data = []
-		for filename in tqdm(os.listdir(self.save_dir)):
+		data_dir = os.path.join(self.save_dir, split)
+		for filename in tqdm(os.listdir(data_dir)):
 			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
+				chunk_data = pd.read_parquet(os.path.join(data_dir, filename), engine='fastparquet')
 				data.append(chunk_data)
 
 		return pd.concat(data)
 
-	def build_attention_matrix(self, row, attn_col, num_targets, attn_col_offset):
-		code_tokens = row['code_tokens'].split(',')
-		num_code_tokens = len(code_tokens)
-
-		attention_matrix = [[0] * num_targets for _ in range(num_code_tokens)]
-
-		for j, code_token_idxs in enumerate(row[attn_col]):
-			for i in code_token_idxs:
-				attention_matrix[i][j + attn_col_offset] = 1 # adjust for padding
-
-		return attention_matrix
-
-	def generate_adj_matrix(self, edges, num_nodes):
-		all_nodes = set()
-		for to_node, from_nodes in edges:
-			all_nodes.add(to_node)
-			all_nodes.update(from_nodes)
-
-		adj_matrix = [[0] * num_nodes for _ in range(num_nodes)]
-
-		for to_node, from_nodes in edges:
-			for from_node in from_nodes:
-				adj_matrix[to_node][from_node] = 1
-
-		return adj_matrix
-
-	def compute_attention_masks(self, data):
-		data['attn_code_tokens'] = data['code_tokens'].apply(
-			lambda row: [[1] * len(row.split(',')) for _ in range(len(row.split(',')))]
-		)
-		data['attn_ast_leaves'] = data['lr_paths_len'].apply(
-			lambda row: [[1] * len(row.split(',')) for _ in range(len(row.split(',')))]
-		)
-		data['attn_dfg_edges'] = data.apply(
-			lambda row: self.generate_adj_matrix(
-			row['dfg_edges'], len(row['dfg_node_mask'].split(','))),axis=1
-		)
-
-		data['attn_code_ast'] = data.apply(
-			lambda row: self.build_attention_matrix(
-				row=row,
-				attn_col='ast_leaf_code_token_idxs',
-				num_targets=len(row['lr_paths_len'].split(',')),
-				attn_col_offset=1  # adjust for padding of AST leaves
-			),
-			axis=1
-		)
-
-		data['attn_code_dfg'] = data.apply(
-			lambda row: self.build_attention_matrix(
-				row=row,
-				attn_col='dfg_node_code_token_idxs',
-				num_targets=len(row['dfg_node_mask'].split(',')),
-				attn_col_offset=1  # adjust for padding of DFG nodes
-			),
-			axis=1
-		)
-
-	def compute_relative_distances(self, pos_ids_str):
+	def compute_relative_distances(self, pos_ids_str, max_distance=127):
 		pos_ids = list(map(int, pos_ids_str.split(',')))
 		distances = []
 		for i in range(len(pos_ids)):
-			# account for padding distance id of 0 --> 0 should not be assigned as a relative distance
-			distances.append([abs(pos_ids[i] - pos_ids[j]) + 1 for j in range(len(pos_ids))])
+			row = []
+			for j in range(len(pos_ids)):
+				# account for padding distance id of 0 that is added when padded in collating a batch
+				# thus, 0 should not be assigned as a relative distance
+				raw_distance = abs(pos_ids[i] - pos_ids[j]) + 1
+				distance = min(raw_distance, max_distance)
+				row.append(distance)
+
+			distances.append(row)
 
 		return distances
 

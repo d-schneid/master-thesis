@@ -143,6 +143,10 @@ class Parser:
 				# search next code token that corresponds to the current AST leaf
 				while not (self.overlap(s, e, row.code_tokens_ranges[curr_code_token_idx][0], row.code_tokens_ranges[curr_code_token_idx][1])):
 					curr_code_token_idx += 1
+					if curr_code_token_idx > code_tokens_last_idx:
+						break
+
+				if curr_code_token_idx > code_tokens_last_idx: break
 
 				overlapping_code_token_idx = curr_code_token_idx
 				curr_leaf_token_idxs = []
@@ -150,8 +154,7 @@ class Parser:
 				while self.overlap(s, e, row.code_tokens_ranges[overlapping_code_token_idx][0], row.code_tokens_ranges[overlapping_code_token_idx][1]):
 					curr_leaf_token_idxs.append(overlapping_code_token_idx)
 					overlapping_code_token_idx += 1
-					if overlapping_code_token_idx > code_tokens_last_idx:
-						break
+					if overlapping_code_token_idx > code_tokens_last_idx: break
 				ast_leaf_code_token_idxs[-1].append(curr_leaf_token_idxs)
 
 		data['ast_leaf_code_token_idxs'] = ast_leaf_code_token_idxs
