@@ -16,7 +16,7 @@ if __name__ == "__main__":
                                     validation_dataset=StructureAwareCCDataset(split='validation'),
                                     test_dataset=StructureAwareCCDataset(split='test'),
                                     micro_batch_size=4,
-                                    global_batch_size=16,)
+                                    global_batch_size=8,)
 
     model = StructureAwareStarcoder2Model(config=StructureAwareStarcoder2Config())
 
@@ -53,11 +53,16 @@ if __name__ == "__main__":
 
     tokenizer = get_nmt_tokenizer(library='huggingface', model_name='bigcode/starcoder2-3b', use_fast=True)
 
+    resume = nl.AutoResume(
+        resume_from_path='local_resume_path'
+    )
+
     llm.train(
         model=model,
         data=data,
         trainer=trainer,
         log=nemo_logger,
+        resume=resume,
         tokenizer=tokenizer,
         optim=opt,
     )

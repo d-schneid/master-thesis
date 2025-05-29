@@ -8,7 +8,7 @@ from data_preprocessing.attn_masks.code_text_attn_mask import CodeTextAttnMask
 
 
 if __name__ == '__main__':
-	attn_mask_builder = CodeTextAttnMask()
+	attn_mask_builder = CodeCompletionAttnMask()
 	data_dir = os.path.join('../data/pretraining/', attn_mask_builder.save_dir_suffix)
 
 	global_num_node_types = -1
@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
 	for split in ['train', 'validation', 'test']:
 		data_handler = DataHandler(save_dir=os.path.join(data_dir, split), attn_mask_builder=attn_mask_builder)
-		data = data_handler.read_dataset(split=split, max_samples=500)
+		data = data_handler.read_dataset(split=split, max_samples=75)
 		data = data_handler.preprocess(data)
 
 		parser = Parser()
