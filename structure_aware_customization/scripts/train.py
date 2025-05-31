@@ -9,6 +9,7 @@ from megatron.core.optimizer import OptimizerConfig
 from nemo import lightning as nl
 from nemo.collections import llm
 from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
+from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 
 
 if __name__ == "__main__":
@@ -53,8 +54,15 @@ if __name__ == "__main__":
 
     tokenizer = get_nmt_tokenizer(library='huggingface', model_name='bigcode/starcoder2-3b', use_fast=True)
 
+    restore_config = RestoreConfig(
+        path='local_checkpoint_path',
+        load_model_state=True,
+        load_optim_state=False,
+        load_artifacts=False,
+    )
+
     resume = nl.AutoResume(
-        resume_from_path='local_resume_path'
+        restore_config=restore_config,
     )
 
     llm.train(

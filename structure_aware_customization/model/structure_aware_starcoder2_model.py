@@ -107,7 +107,12 @@ class HFStructureAwareStarcoder2Importer(io.ModelConnector["Starcoder2ForCausalL
 			"lm_head.weight": "output_layer.weight",
 		}
 
-		return io.apply_transforms(source, target, mapping=mapping, transforms=[_import_qkv_bias, _import_qkv_weight])
+		return io.apply_transforms(source, target, mapping=mapping, transforms=[_import_qkv_bias, _import_qkv_weight,
+																				_init_code_text_token_rel_pos_embedding_randomly,
+																				_init_ll_sims_weight_bias_randomly,
+																				_init_dfg_node_embedding_randomly,
+																				_init_ast_node_type_embedding_randomly,
+																				_init_ast_node_depth_embedding_randomly,])
 
 	@property
 	def tokenizer(self) -> "AutoTokenizer":
@@ -145,6 +150,61 @@ class HFStructureAwareStarcoder2Importer(io.ModelConnector["Starcoder2ForCausalL
 		)
 
 		return output
+
+
+@io.state_transform(
+	source_key=(),
+	target_key="decoder.layers.*.self_attention.code_text_token_rel_pos_embedding.word_embeddings.weight",
+)
+def _init_code_text_token_rel_pos_embedding_randomly(ctx: io.TransformCTX):
+	tensor = ctx.target_state["decoder.layers.0.self_attention.code_text_token_rel_pos_embedding.word_embeddings.weight"]
+	rand_init_tensor = torch.randn_like(tensor) * ctx.target.config.init_method_std
+
+	return rand_init_tensor
+
+
+@io.state_transform(
+	source_key=(),
+	target_key="decoder.layers.*.self_attention.ll_sims_weight_bias.word_embeddings.weight",
+)
+def _init_ll_sims_weight_bias_randomly(ctx: io.TransformCTX):
+	tensor = ctx.target_state["decoder.layers.0.self_attention.ll_sims_weight_bias.word_embeddings.weight"]
+	rand_init_tensor = torch.randn_like(tensor) * ctx.target.config.init_method_std
+
+	return rand_init_tensor
+
+
+@io.state_transform(
+	source_key=(),
+	target_key="dfg_node_embedding.word_embeddings.weight",
+)
+def _init_dfg_node_embedding_randomly(ctx: io.TransformCTX):
+	tensor = ctx.target_state["dfg_node_embedding.word_embeddings.weight"]
+	rand_init_tensor = torch.randn_like(tensor) * ctx.target.config.init_method_std
+
+	return rand_init_tensor
+
+
+@io.state_transform(
+	source_key=(),
+	target_key="ast_node_type_embedding.word_embeddings.weight",
+)
+def _init_ast_node_type_embedding_randomly(ctx: io.TransformCTX):
+	tensor = ctx.target_state["ast_node_type_embedding.word_embeddings.weight"]
+	rand_init_tensor = torch.randn_like(tensor) * ctx.target.config.init_method_std
+
+	return rand_init_tensor
+
+
+@io.state_transform(
+	source_key=(),
+	target_key="ast_node_depth_embedding.word_embeddings.weight",
+)
+def _init_ast_node_depth_embedding_randomly(ctx: io.TransformCTX):
+	tensor = ctx.target_state["ast_node_depth_embedding.word_embeddings.weight"]
+	rand_init_tensor = torch.randn_like(tensor) * ctx.target.config.init_method_std
+
+	return rand_init_tensor
 
 
 @io.state_transform(
