@@ -212,6 +212,10 @@ class DataHandler:
 			dfg_node_to_idx = {k: i for i, k in enumerate(dfg_nodes)}
 			# DFG was built with the indices of AST leaves
 			# Thus, the index of a DFG node can be used to retrieve the corresponding AST leaf and its code tokens
+			if max(dfg_nodes) >= len(row.ast_leaf_code_token_idxs):
+				dfg_edges.append([])
+				dfg_node_code_token_idxs.append([])
+				continue
 			dfg_node_code_token_idxs.append([row.ast_leaf_code_token_idxs[i] for i in dfg_nodes])
 			dfg_edges.append([(dfg_node_to_idx[left], [dfg_node_to_idx[r] for r in right]) for left, right in row.dfg_edges])
 
@@ -220,6 +224,9 @@ class DataHandler:
 		data['dfg_node_mask'] = [str(START_TOK_ID_DFG) + ","
 								 + ",".join(["1" for _ in sublist])
 								 + "," + str(PAD_TOK_ID_DFG) for sublist in dfg_node_code_token_idxs]
+		data = data[data['dfg_edges'].apply(lambda x: x != [])].reset_index(drop=True)
+
+		return data
 
 	def store_preprocessed_data(self, data, num_rows_per_file):
 		# do memory intensive part in chunks
@@ -231,7 +238,7 @@ class DataHandler:
 			chunk_data = data.iloc[start:start + num_rows_per_file].copy()  # copy so that edits are not on data
 			chunk_node_types = self.add_ast_lr_paths_and_ll_sim(chunk_data)
 			all_node_types.update(chunk_node_types)
-			self.map_dfg_node_code_token_idices(chunk_data)
+			chunk_data = self.map_dfg_node_code_token_idices(chunk_data)
 			self.add_special_tokens(chunk_data)
 			chunk_data = self.attn_mask_builder.compute_attention_masks(chunk_data)
 			chunk_data['code_tokens_rel_pos_ids'] = chunk_data['code_tokens_pos_ids'].apply(self.compute_relative_distances)
