@@ -1,3 +1,5 @@
+from data_preprocessing.tasks.code_completion import CodeCompletion
+from data_preprocessing.datasets.code_search_net import CodeSearchNet
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
 from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
@@ -13,11 +15,16 @@ from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 
 
 if __name__ == "__main__":
-    data = StructureAwareDataModule(train_dataset=StructureAwareCCDataset(split='train'),
-                                    validation_dataset=StructureAwareCCDataset(split='validation'),
-                                    test_dataset=StructureAwareCCDataset(split='test'),
+    task = CodeCompletion()
+    train_ds = CodeSearchNet(task=task.task, split="train")
+    validation_ds = CodeSearchNet(task=task.task, split="validation")
+    test_ds = CodeSearchNet(task=task.task, split="test")
+
+    data = StructureAwareDataModule(train_dataset=StructureAwareCCDataset(dataset=train_ds),
+                                    validation_dataset=StructureAwareCCDataset(dataset=validation_ds),
+                                    test_dataset=StructureAwareCCDataset(dataset=test_ds),
                                     micro_batch_size=4,
-                                    global_batch_size=8,)
+                                    global_batch_size=16, )
 
     model = StructureAwareStarcoder2Model(config=StructureAwareStarcoder2Config())
 

@@ -1,19 +1,20 @@
 from structure_aware_customization.dataset.structure_aware_dataset import StructureAwareDataset
+from data_preprocessing.datasets.dataset import Dataset as EncapsulatedDataset
 
 import torch
 
 
 class StructureAwareCCDataset(StructureAwareDataset):
 
-	def __init__(self, save_dir='../../data/pretraining', split='train') -> None:
-		super().__init__(save_dir=save_dir, task='code_completion', split=split)
+	def __init__(self, dataset: EncapsulatedDataset) -> None:
+		super().__init__(dataset=dataset)
 
 	def __getitem__(self, idx):
 		batch = super().__getitem__(idx)
 
-		code_tokens = self.data.iloc[idx]['code_tokens']
-		labels = torch.cat([torch.tensor([self.padding_value]), code_tokens[1:]])
-		loss_mask = torch.cat([torch.tensor([0]), torch.ones(len(code_tokens[:-1]))])
+		code_tokens = batch['code_token_ids']
+		labels = torch.cat([torch.tensor([self.padding_value], dtype=code_tokens.dtype), code_tokens[1:]])
+		loss_mask = torch.cat([torch.tensor([0], dtype=code_tokens.dtype), torch.ones(len(code_tokens[:-1]), dtype=code_tokens.dtype)])
 
 		batch['labels'] = labels
 		batch['loss_mask'] = loss_mask

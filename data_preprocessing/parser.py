@@ -72,7 +72,8 @@ class Parser:
 	def tokenize_codes_texts(self, texts, batch_size=1024):
 		tokenized_texts = []
 		for start in tqdm(range(0, len(texts), batch_size)):
-			tokenized_texts += self.tokenizer(texts[start:start + batch_size]).input_ids
+			batch_input_ids = self.tokenizer(texts[start:start + batch_size]).input_ids
+			tokenized_texts.extend([np.array(ids, dtype=np.int32) for ids in batch_input_ids])
 
 		return tokenized_texts
 
@@ -110,7 +111,8 @@ class Parser:
 					decoded_code_to_code.append(j + 1)
 					j += 2
 				else:
-					raise Exception('Character "' + decoded_code[i] + '" from tokenized code not found in code.')
+					decoded_code_tokens = []
+					break
 
 			# map each code token to a range in code
 			decoded_code_idx = 0
@@ -118,10 +120,18 @@ class Parser:
 			for ct in decoded_code_tokens:
 				s, e = decoded_code_idx, decoded_code_idx + len(ct)
 				decoded_code_idx = e
-				curr_ranges.append((min(decoded_code_to_code[s:e]), 1 + max(decoded_code_to_code[s:e])))
+				slice_ = decoded_code_to_code[s:e]
+				if slice_:
+					curr_ranges.append((min(slice_), 1 + max(slice_)))
+				else:
+					curr_ranges = []
+					break
 			ranges.append(curr_ranges)  # first [None] and last [None] for <s> and </s>
 
 		data['code_tokens_ranges'] = ranges
+		data = data[data['code_tokens_ranges'].apply(lambda x: x != [])].reset_index(drop=True)
+
+		return data
 
 	def overlap(self, s1, e1, s2, e2):
 		return s1 <= s2 < e1 or s2 <= s1 < e2

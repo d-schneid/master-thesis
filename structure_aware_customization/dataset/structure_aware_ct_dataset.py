@@ -1,42 +1,21 @@
-import ast
-
 from structure_aware_customization.dataset.structure_aware_dataset import StructureAwareDataset
+from data_preprocessing.datasets.dataset import Dataset as EncapsulatedDataset
 
 import torch
 
 
 class StructureAwareCTDataset(StructureAwareDataset):
 
-	def __init__(self, save_dir='../../data/pretraining', split='train') -> None:
-		super().__init__(save_dir=save_dir, task='code_text', split=split)
-
-		self.data['text_tokens'] = (self.data['text_tokens'].apply(lambda x: list(map(int, x.split(',')))).
-									apply(lambda x: torch.tensor(x)))
-
-		self.data['text_tokens_rel_pos_ids'] = (self.data['text_tokens_rel_pos_ids'].apply(ast.literal_eval).
-												apply(lambda x: torch.tensor(x)))
-
-		self.data['attn_text_tokens'] = self.data['attn_text_tokens'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_code_text'] = self.data['attn_code_text'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_ast_text'] = self.data['attn_ast_text'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_dfg_text'] = self.data['attn_dfg_text'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
+	def __init__(self, dataset: EncapsulatedDataset) -> None:
+		super().__init__(dataset=dataset)
 
 	def __getitem__(self, idx):
 		batch = super().__getitem__(idx)
 
-		text_tokens = self.data.iloc[idx]['text_tokens']
-		labels = torch.cat([torch.tensor([self.padding_value]), text_tokens[1:]])
-		loss_mask = torch.cat([torch.tensor([0]), torch.ones(len(text_tokens[:-1]))])
+		text_tokens = batch['text_token_ids']
+		labels = torch.cat([torch.tensor([self.padding_value], dtype=text_tokens.dtype), text_tokens[1:]])
+		loss_mask = torch.cat([torch.tensor([0], dtype=text_tokens.dtype), torch.ones(len(text_tokens[:-1]), dtype=text_tokens.dtype)])
 
-		batch['text_token_ids'] = text_tokens
-		batch['text_token_rel_pos_ids'] = self.data.iloc[idx]['text_tokens_rel_pos_ids']
-		batch['attn_text_tokens'] = self.data.iloc[idx]['attn_text_tokens']
-		batch['attn_code_text'] = self.data.iloc[idx]['attn_code_text']
-		batch['attn_ast_text'] = self.data.iloc[idx]['attn_ast_text']
-		batch['attn_dfg_text'] = self.data.iloc[idx]['attn_dfg_text']
 		batch['labels'] = labels
 		batch['loss_mask'] = loss_mask
 

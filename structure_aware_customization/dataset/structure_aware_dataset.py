@@ -1,75 +1,47 @@
-import os
-import ast
 import json
 from abc import ABC, abstractmethod
 
 from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
+from data_preprocessing.datasets.dataset import Dataset as EncapsulatedDataset
 
 import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
+import h5py
 
 
 class StructureAwareDataset(ABC, Dataset):
 
-	def __init__(self, save_dir='../../data/pretraining', task='code_completion', split='train') -> None:
+	def __init__(self, dataset: EncapsulatedDataset) -> None:
 		super().__init__()
-		self.data_handler = DataHandler(save_dir=os.path.join(save_dir, task))
+		self.data_handler = DataHandler(dataset=dataset)
 		self.padding_value = self.data_handler.tokenizer.eos_token_id
-		self.data = self.data_handler.get_concat_stored_data(split=split)
-		with open(os.path.join(save_dir, task, 'metadata.json'), 'r') as f_metadata:
-			metadata = json.load(f_metadata)
-		self.pad_tok_id_ast = metadata['num_ast_node_types']
+		self.h5_file = h5py.File(dataset.h5_path, 'r')
 
-		self.data['code_tokens'] = (self.data['code_tokens'].apply(lambda x: list(map(int, x.split(',')))).
-									apply(lambda x: torch.tensor(x)))
+		with open(dataset.metadata_path, 'r') as f:
+			metadata = json.load(f)
+		self.num_samples = metadata['num_samples']
 
-		self.data['code_tokens_rel_pos_ids'] = (self.data['code_tokens_rel_pos_ids'].apply(ast.literal_eval).
-												apply(lambda x: torch.tensor(x)))
+		with open(dataset.metadata_path_train, 'r') as f:
+			self.metadata = json.load(f)
+		self.pad_tok_id_ast = self.metadata['num_ast_node_types']
 
-		self.data['ll_sims'] = (self.data['ll_sims'].
-								apply(lambda x: [list(map(float, sublist.split(','))) for sublist in x.split(';')]).
-								apply(pad_inner_lists, padding_value=self.padding_value, padding_side='left'))
+		self.data = []
+		for key in self.h5_file.keys():
+			group = self.h5_file[key]
+			sample = {
+				name: torch.from_numpy(dataset[()]) for name, dataset in group.items()
+			}
+			self.data.append(sample)
 
-		self.data['lr_paths_types'] = (self.data['lr_paths_types'].apply(lambda x: ast.literal_eval(x)).
-									   apply(pad_inner_lists, padding_value=self.pad_tok_id_ast))
-
-		self.data['lr_paths_len'] = (self.data['lr_paths_len'].apply(lambda x: list(map(int, x.split(',')))).
-									 apply(lambda x: torch.tensor(x)))
-
-		self.data['dfg_node_mask'] = (self.data['dfg_node_mask'].apply(lambda x: list(map(int, x.split(',')))).
-									  apply(lambda x: torch.tensor(x)))
-
-		self.data['attn_code_tokens'] = self.data['attn_code_tokens'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_ast_leaves'] = self.data['attn_ast_leaves'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_dfg_edges'] = self.data['attn_dfg_edges'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_code_ast'] = self.data['attn_code_ast'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
-
-		self.data['attn_code_dfg'] = self.data['attn_code_dfg'].apply(ast.literal_eval).apply(lambda x: torch.tensor(x))
+		self.h5_file.close()
 
 	def __len__(self) -> int:
-		return len(self.data)
+		return self.num_samples
 
 	def __getitem__(self, idx):
-		batch = {
-			'code_token_ids': self.data.iloc[idx]['code_tokens'],
-			'code_token_rel_pos_ids': self.data.iloc[idx]['code_tokens_rel_pos_ids'],
-			'll_sims': self.data.iloc[idx]['ll_sims'],
-			'lr_paths_types': self.data.iloc[idx]['lr_paths_types'],
-			'lr_paths_len': self.data.iloc[idx]['lr_paths_len'],
-			'dfg_node_mask': self.data.iloc[idx]['dfg_node_mask'],
-			'attn_code_tokens': self.data.iloc[idx]['attn_code_tokens'],
-			'attn_ast_leaves': self.data.iloc[idx]['attn_ast_leaves'],
-			'attn_dfg_edges': self.data.iloc[idx]['attn_dfg_edges'],
-			'attn_code_ast': self.data.iloc[idx]['attn_code_ast'],
-			'attn_code_dfg': self.data.iloc[idx]['attn_code_dfg'],
-		}
-
-		return batch
+		return self.data[idx]
 
 	@abstractmethod
 	def get_key_not_in(self):
@@ -96,7 +68,7 @@ class StructureAwareDataset(ABC, Dataset):
 				if key == 'lr_paths_types':
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.pad_tok_id_ast)
 				elif key in self.get_attn_keys():
-					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=-1e9)
+					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.data_handler.task.attn_bias_ignore)
 				else:
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.padding_value)
 
@@ -104,7 +76,7 @@ class StructureAwareDataset(ABC, Dataset):
 			if key == 'dfg_node_mask':
 				padding_value = PAD_TOK_ID_DFG
 			if key in self.get_attn_keys():
-				padding_value = -1e9
+				padding_value = self.data_handler.task.attn_bias_ignore
 
 			if key in ['labels', 'loss_mask']:
 				batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value, padding_side='left')
@@ -126,7 +98,8 @@ class StructureAwareDataset(ABC, Dataset):
 		attn_code_dfg_T = attn_code_dfg.transpose(1, 2)
 
 		# Compute null matrix for attention between AST leaves and DFG edges
-		attn_ast_dfg = torch.full((attn_ast_leaves.size(0), attn_ast_leaves.size(1), attn_dfg_edges.size(2)), fill_value=-1e9)
+		attn_ast_dfg = torch.full((attn_ast_leaves.size(0), attn_ast_leaves.size(1), attn_dfg_edges.size(2)),
+								  fill_value=self.data_handler.task.attn_bias_ignore)
 		attn_ast_dfg_T = attn_ast_dfg.transpose(1, 2)
 
 		# Build block matrices column-wise

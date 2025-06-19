@@ -1,53 +1,64 @@
 import os
-import pickle
 import re
 import tokenize
-import ast
+import json
 from io import StringIO
-from types import SimpleNamespace
+from joblib import Parallel, delayed
 
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoTokenizer
 import pandas as pd
 
-from data_preprocessing.attn_masks.attn_mask import AttnMask
-from data_preprocessing.attn_masks.code_completion_attn_mask import CodeCompletionAttnMask
+from data_preprocessing.tasks.task import Task
+from data_preprocessing.tasks.code_completion import CodeCompletion
+from data_preprocessing.datasets.dataset import Dataset
 
 tqdm.pandas()
-from datasets import load_dataset
 
 START_TOK_ID_DFG = 0
 PAD_TOK_ID_DFG = 2
 
 
+def compute_lr_paths_and_ll_sim(lr_paths_types):
+
+	def get_ll_sim(lr_path1, lr_path2):
+		node_types = [node for node in lr_path1 + lr_path2]
+		if '<START_AST>' in node_types or '<END_AST>' in node_types:
+			return 0
+		common = 1  # root is always common
+
+		for i in range(2, min(len(lr_path1), len(lr_path2)) + 1):
+			if lr_path1[-i] == lr_path2[-i]:
+				common += 1
+			else:
+				break
+
+		return common * common / (len(lr_path1) * len(lr_path2))
+
+	num_ast_leaves = min(len(lr_paths_types), 512)
+	ll_sims = np.eye(num_ast_leaves, dtype=np.float16)
+
+	# optimize indices for upper triangular matrix and <START_AST> and <END_AST> tokens
+	for i in range(1, num_ast_leaves - 1):
+		for j in range(i + 1, num_ast_leaves - 1):
+			sim = get_ll_sim(lr_paths_types[i], lr_paths_types[j])
+			ll_sims[i, j] = ll_sims[j, i] = sim
+
+	return ll_sims
+
+
 class DataHandler:
 
-	def __init__(self, save_dir, dataset='code_search_net', lang='python',
-				 tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b'), attn_mask_builder: AttnMask=CodeCompletionAttnMask()):
-		self.save_dir = save_dir
+	def __init__(self, dataset: Dataset, task: Task=CodeCompletion(),
+				 tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b')):
+		self.save_dir = dataset.save_dir
 		self.dataset = dataset
-		self.lang = lang
 		self.tokenizer = tokenizer
-		self.attn_mask_builder = attn_mask_builder
+		self.task = task
 
-	def read_dataset(self, split, max_samples=None):
-		np.random.seed(10)
-		dataset = load_dataset(self.dataset, self.lang)
-		rows = []
-
-		num_samples_in_split = len(dataset[split])
-		indices = list(range(num_samples_in_split))
-		if (max_samples is not None) and (num_samples_in_split > max_samples):
-			indices = list(map(int, np.random.choice(indices, max_samples, replace=False)))
-		pbar = tqdm(indices)
-		pbar.set_description('Reading split=' + split)
-
-		for i in pbar:
-			sample = dataset[split][i]
-			rows.append([sample['func_documentation_string'], sample['func_code_string']])
-
-		return pd.DataFrame(rows, columns=['text', 'code'])
+	def read_dataset(self, batch):
+		return pd.DataFrame(self.dataset.read_dataset(batch), columns=['text', 'code'])
 
 	def get_tokenizer_chars(self):
 		tokenizer_chars = []
@@ -141,22 +152,18 @@ class DataHandler:
 
 		return data
 
-	def convert_tokens_to_strings(self, data):
-		data = data.drop(columns=['ast_leaf_tokens', 'ast_leaf_ranges', 'code_tokens_ranges'])
-		for col in ['code_tokens', 'text_tokens']:
-			data[col] = data[col].progress_apply(lambda l: ','.join(list(map(str, l))))
-
-		return data.sample(frac=1).reset_index(drop=True)
-
 	def get_lr_path(self, leaf):
 		path = [leaf]
 		while path[-1].parent is not None:
 			path.append(path[-1].parent)
 
-		return path
+		return [node.type for node in path]
 
 	def clean_data(self, data):
-		return data[data['dfg_edges'].apply(lambda row: row != [])].reset_index(drop=True)
+		data = data.drop(columns=['ast_leaf_tokens', 'ast_leaf_ranges', 'code_tokens_ranges'])
+		data = data[data['dfg_edges'].apply(lambda row: row != [])].reset_index(drop=True)
+
+		return data
 
 	def get_ll_sim(self, lr_path1, lr_path2):
 		node_types = [node.type for node in lr_path1 + lr_path2]
@@ -170,30 +177,51 @@ class DataHandler:
 
 		return common * common / (len(lr_path1) * len(lr_path2))
 
-	def add_ast_lr_paths_and_ll_sim(self, data):
-		ll_sims = []
-		lr_paths = []
+	def pad_inner_lists(self, row, pad_value=0):
+		max_len = max(len(sublist) for sublist in row)
+
+		return np.array([sublist + [pad_value] * (max_len - len(sublist)) for sublist in row], dtype=np.int32)
+
+	def add_ast_lr_paths_and_ll_sim(self, data, node_type_to_idx):
 		all_node_types = set()
+		lr_paths_types = []
 
-		for i, row in tqdm(enumerate(data.itertuples())):
-			curr_lr_paths = [[SimpleNamespace(type='<START_AST>')]] + [self.get_lr_path(leaf) for leaf in row.ast_leaves] + [[SimpleNamespace(type='<END_AST>')]]
-			num_ast_leaves = min(len(curr_lr_paths), 512)
-			curr_ll_sims = np.ones((num_ast_leaves, num_ast_leaves))
+		for row in tqdm(data.itertuples()):
+			curr_lr_paths_nodes_types = [self.get_lr_path(leaf) for leaf in row.ast_leaves]
 
-			for i in range(num_ast_leaves - 1):
-				for j in range(i + 1, num_ast_leaves):
-					curr_ll_sims[i, j] = curr_ll_sims[j, i] = self.get_ll_sim(curr_lr_paths[i], curr_lr_paths[j])
+			curr_lr_paths_types = [['<START_AST>']] + [path for path in curr_lr_paths_nodes_types] + [['<END_AST>']]
+			lr_paths_types.append(curr_lr_paths_types)
 
-			ll_sims.append(';'.join([','.join(list(map(str, row))) for row in curr_ll_sims]))
-			lr_paths.append([[node.type for node in path] for path in curr_lr_paths])
-			all_node_types.update(set(np.concatenate(lr_paths[-1])))
+			all_node_types.update(set(np.concatenate(lr_paths_types[-1])))
 
 		data.drop(columns=['ast_leaves'], inplace=True)
-		data['ll_sims'] = ll_sims
-		data['lr_paths_types'] = lr_paths
-		data['lr_paths_len'] = data['lr_paths_types'].apply(lambda row: ",".join(str(len(sublist)) for sublist in row))
+		data['ll_sims'] = Parallel(n_jobs=-1)(
+			delayed(compute_lr_paths_and_ll_sim)(curr_lr_paths_types)
+			for curr_lr_paths_types in tqdm(lr_paths_types)
+		)
+		max_node_idx = max(node_type_to_idx.values()) if node_type_to_idx else 0
+		if max_node_idx == 0:
+			node_type_to_idx['<PAD>'] = max_node_idx
+			max_node_idx += 1
+			node_type_to_idx['<NOT_SEEN>'] = max_node_idx
 
-		return all_node_types
+		for node_type in all_node_types:
+			if self.dataset.split != 'train':
+				if node_type not in node_type_to_idx:
+					node_type_to_idx[node_type] = node_type_to_idx['<NOT_SEEN>']
+			elif node_type not in node_type_to_idx:
+				max_node_idx += 1
+				node_type_to_idx[node_type] = max_node_idx
+
+		data['lr_paths_types'] = [
+			[[node_type_to_idx[node_type] for node_type in lr_path] for lr_path in row]
+			for row in lr_paths_types
+		]
+		data['lr_paths_len'] = data['lr_paths_types'].apply(lambda row: np.array([len(sublist) for sublist in row], dtype=np.int32))
+		data['lr_paths_types'] = data['lr_paths_types'].apply(lambda row: self.pad_inner_lists(row))
+		max_ast_depth = max(row.shape[1] for row in data['lr_paths_types'])
+
+		return node_type_to_idx, max_ast_depth
 
 	def map_dfg_node_code_token_idices(self, data):
 		""""
@@ -221,121 +249,61 @@ class DataHandler:
 
 		data['dfg_edges'] = dfg_edges
 		data['dfg_node_code_token_idxs'] = dfg_node_code_token_idxs
-		data['dfg_node_mask'] = [str(START_TOK_ID_DFG) + ","
-								 + ",".join(["1" for _ in sublist])
-								 + "," + str(PAD_TOK_ID_DFG) for sublist in dfg_node_code_token_idxs]
+		data['dfg_node_mask'] = [np.array([START_TOK_ID_DFG] + [1] * len(sublist) + [PAD_TOK_ID_DFG], dtype=np.int32)
+								 for sublist in dfg_node_code_token_idxs]
 		data = data[data['dfg_edges'].apply(lambda x: x != [])].reset_index(drop=True)
 
 		return data
 
-	def store_preprocessed_data(self, data, num_rows_per_file):
-		# do memory intensive part in chunks
+	def build_df(self, data, node_type_to_idx):
+		data = data.drop(columns=['text', 'code'])
 		os.makedirs(self.save_dir, exist_ok=True)
-		all_node_types = set()
-		global_max_rel_pos = 0
 
-		for start in range(0, len(data), num_rows_per_file):
-			chunk_data = data.iloc[start:start + num_rows_per_file].copy()  # copy so that edits are not on data
-			chunk_node_types = self.add_ast_lr_paths_and_ll_sim(chunk_data)
-			all_node_types.update(chunk_node_types)
-			chunk_data = self.map_dfg_node_code_token_idices(chunk_data)
-			self.add_special_tokens(chunk_data)
-			chunk_data = self.attn_mask_builder.compute_attention_masks(chunk_data)
-			chunk_data['code_tokens_rel_pos_ids'] = chunk_data['code_tokens_pos_ids'].apply(self.compute_relative_distances)
-			chunk_data['text_tokens_rel_pos_ids'] = chunk_data['text_tokens_pos_ids'].apply(self.compute_relative_distances)
-			chunk_max_rel_pos = max([row[0][-1] for row in chunk_data['code_tokens_rel_pos_ids']])
-			global_max_rel_pos = max(global_max_rel_pos, chunk_max_rel_pos)
+		updated_node_type_to_idx, max_ast_depth = self.add_ast_lr_paths_and_ll_sim(data, node_type_to_idx)
+		if self.dataset.split != 'train':
+			with open(self.dataset.metadata_path_train, 'r') as f:
+				metadata_train = json.load(f)
+			max_ast_depth = metadata_train['max_ast_depth']
+			data = data[data['lr_paths_len'].apply(lambda lengths: np.max(lengths) <= max_ast_depth)].reset_index(drop=True)
 
-			cols = (['code_tokens', 'code_tokens_rel_pos_ids', 'lr_paths_types', 'lr_paths_len', 'll_sims',
-					 'dfg_node_mask',]
-					+ self.attn_mask_builder.get_cols())
-			chunk_data = chunk_data[cols]
+		data = self.map_dfg_node_code_token_idices(data)
+		self.add_special_tokens(data)
+		data = self.task.compute_attention_masks(data)
+		data = data.drop(columns=['dfg_edges', 'ast_leaf_code_token_idxs'])
+		data['code_tokens_rel_pos_ids'] = Parallel(n_jobs=-1)(
+			delayed(self.compute_relative_distances)(pos_str)
+			for pos_str in tqdm(data['code_tokens_pos_ids'])
+		)
+		data['text_tokens_rel_pos_ids'] = Parallel(n_jobs=-1)(
+			delayed(self.compute_relative_distances)(pos_str)
+			for pos_str in tqdm(data['text_tokens_pos_ids'])
+		)
+		data = data.drop(columns=['code_tokens_pos_ids', 'text_tokens_pos_ids'])
+		max_rel_pos = max([row[0][-1] for row in data['code_tokens_rel_pos_ids']])
 
-			for col in ['code_tokens_rel_pos_ids', 'lr_paths_types'] + self.attn_mask_builder.get_cols():
-				chunk_data[col] = chunk_data[col].apply(str)
+		cols = (['code_tokens', 'code_tokens_rel_pos_ids', 'lr_paths_types', 'lr_paths_len', 'll_sims', 'dfg_node_mask',]
+				+ self.task.get_cols())
+		data = data[cols]
 
-			chunk_data.to_parquet(os.path.join(self.save_dir, 'from_' + str(start) + '.parquet'), engine='fastparquet', row_group_offsets=100)
+		return updated_node_type_to_idx, max_rel_pos, max_ast_depth, data
 
-		return all_node_types, global_max_rel_pos
+	def compute_relative_distances(self, pos_ids, max_distance=127):
+		# account for padding distance id of 0 that is added when padded in collating a batch
+		# thus, 0 should not be assigned as a relative distance
+		dist_matrix = np.abs(pos_ids[:, None] - pos_ids[None, :]) + 1
+		dist_matrix = np.minimum(dist_matrix, max_distance)
 
-	def parse_list_of_lists(self, s, type_=int):
-		list_of_lists = s[1:-2].split('], ')
-		if type_ == str:
-			list_of_lists = [[t[1:-1].replace('\\n', '\n').replace('\\\\', '\\') for t in x[1:].split(', ')] for x in list_of_lists]
-		elif type_ == int:
-			list_of_lists = [[int(t) for t in x[1:].split(', ')] for x in list_of_lists]
-		else:
-			raise Exception('Unknown value for type_')
-		return list_of_lists
-
-	def convert_node_types_to_indices(self, all_node_types):
-		all_node_types = sorted(list(all_node_types))
-		node_type_to_idx = {t: i for i, t in enumerate(all_node_types)}
-		with open(os.path.join(self.save_dir, 'all_node_types.pkl'), 'wb') as f:
-			pickle.dump(all_node_types, f)
-
-		global_max_ast_depth = -1
-		for filename in tqdm(os.listdir(self.save_dir)):
-			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
-				chunk_data['lr_paths_types'] = chunk_data['lr_paths_types'].apply(lambda lr_path_types: str([[node_type_to_idx[node_type] for node_type in lr_path]
-																											 for lr_path in self.parse_list_of_lists(lr_path_types, type_=str)]))
-				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
-
-				local_max_ast_depth = chunk_data['lr_paths_types'].apply(lambda x: ast.literal_eval(x)).apply(lambda row: max([len(sublist) for sublist in row])).max()
-				if local_max_ast_depth > global_max_ast_depth: global_max_ast_depth = local_max_ast_depth
-
-		return global_max_ast_depth
-
-	def upper_triangle(self, ll_sims):
-		rows = ll_sims.split(';')[:-1]
-		ll_sims = ''
-		for i, row in enumerate(rows):
-			ll_sims += ','.join(row.split(',')[i + 1:]) + ';'
-		return ll_sims[:-1]
-
-	def reduce_ll_sims(self):
-		# Reduce memory taken by ll_sims column by storing only upper triangles w/o diagonals
-		pbar = tqdm(os.listdir(self.save_dir))
-		for filename in pbar:
-			pbar.set_description(filename)
-			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(os.path.join(self.save_dir, filename), engine='fastparquet')
-				chunk_data['ll_sims'] = chunk_data['ll_sims'].apply(self.upper_triangle)
-				chunk_data.to_parquet(os.path.join(self.save_dir, filename), engine='fastparquet', row_group_offsets=100)
-
-	def get_concat_stored_data(self, split='train'):
-		data = []
-		data_dir = os.path.join(self.save_dir, split)
-		for filename in tqdm(os.listdir(data_dir)):
-			if filename.startswith('from_'):
-				chunk_data = pd.read_parquet(os.path.join(data_dir, filename), engine='fastparquet')
-				data.append(chunk_data)
-
-		return pd.concat(data)
-
-	def compute_relative_distances(self, pos_ids_str, max_distance=127):
-		pos_ids = list(map(int, pos_ids_str.split(',')))
-		distances = []
-		for i in range(len(pos_ids)):
-			row = []
-			for j in range(len(pos_ids)):
-				# account for padding distance id of 0 that is added when padded in collating a batch
-				# thus, 0 should not be assigned as a relative distance
-				raw_distance = abs(pos_ids[i] - pos_ids[j]) + 1
-				distance = min(raw_distance, max_distance)
-				row.append(distance)
-
-			distances.append(row)
-
-		return distances
+		return dist_matrix.astype(np.int32)
 
 	def add_special_tokens(self, data):
-		data['code_tokens'] = data['code_tokens'].apply(lambda x: str(self.tokenizer.bos_token_id) + ',' + x + ',' + str(self.tokenizer.eos_token_id))
-		data['code_tokens_pos_ids'] = data['code_tokens'].apply(lambda x: ','.join(map(str, range(len(x.split(','))))))
-
-		data['text_tokens'] = data['text_tokens'].apply(lambda x: str(self.tokenizer.bos_token_id) + ',' + x + ',' + str(self.tokenizer.eos_token_id))
-		data['text_tokens_pos_ids'] = data['text_tokens'].apply(lambda x: ','.join(map(str, range(len(x.split(','))))))
+		data['code_tokens'] = data['code_tokens'].apply(
+			lambda x: np.concatenate(([self.tokenizer.bos_token_id], x, [self.tokenizer.eos_token_id])).astype(np.int32)
+		)
+		data['code_tokens_pos_ids'] = data['code_tokens'].apply(lambda x: np.arange(len(x)).astype(np.int32))
+		data['text_tokens'] = data['text_tokens'].apply(
+			lambda x: np.concatenate(([self.tokenizer.bos_token_id], x, [self.tokenizer.eos_token_id])).astype(np.int32)
+		)
+		data['text_tokens_pos_ids'] = data['text_tokens'].apply(lambda x: np.arange(len(x)).astype(np.int32))
 
 		# account for BOS token
 		data['ast_leaf_code_token_idxs'] = data['ast_leaf_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])

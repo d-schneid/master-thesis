@@ -63,7 +63,7 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 				scatter_to_sequence_parallel=scatter_embedding_sequence_parallel,
 			)
 
-			vocab_size_ast_node_type = self.config.num_ast_node_types + 1 # padding
+			vocab_size_ast_node_type = self.config.num_ast_node_types
 			self.ast_node_type_embedding = LanguageModelEmbedding(
 				config=self.config,
 				vocab_size=vocab_size_ast_node_type if vocab_size_ast_node_type % 2 == 0 else vocab_size_ast_node_type + 1,  # even
