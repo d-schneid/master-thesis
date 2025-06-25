@@ -24,6 +24,9 @@ class CodeText(Task):
 			'attn_dfg_text',
 		]
 
+	def get_max_seq_len_cols(self):
+		return super().get_max_seq_len_cols() + ['text_tokens']
+
 	def _generate_sample(self, row):
 		update = {
 			"text_token_ids": row["text_tokens"],
@@ -35,6 +38,13 @@ class CodeText(Task):
 		}
 
 		return update
+
+	def _get_1d_features(self):
+		return [('text_token_ids', np.int32)]
+
+	def _get_2d_features(self):
+		return [('text_token_rel_pos_ids', np.int32), ('attn_text_tokens', np.float32), ('attn_code_text', np.float32),
+				('attn_ast_text', np.float32), ('attn_dfg_text', np.float32)]
 
 	def generate_adj_matrix(self, edges, num_nodes):
 		adj_matrix = np.full((num_nodes, num_nodes), self.attn_bias_ignore, dtype=np.float32)

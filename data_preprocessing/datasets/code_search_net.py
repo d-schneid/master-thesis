@@ -2,10 +2,12 @@ from data_preprocessing.datasets.dataset import Dataset
 
 from datasets import load_dataset
 
+from data_preprocessing.tasks.task import Task
+
 
 class CodeSearchNet(Dataset):
 
-	def __init__(self, task, split='train'):
+	def __init__(self, task: Task, split='train'):
 		super().__init__(dataset='code-search-net/code_search_net', task=task, split=split)
 
 	def get_data_cols(self):

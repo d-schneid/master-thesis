@@ -16,15 +16,19 @@ from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 
 if __name__ == "__main__":
     task = CodeCompletion()
-    train_ds = CodeSearchNet(task=task.task, split="train")
-    validation_ds = CodeSearchNet(task=task.task, split="validation")
-    test_ds = CodeSearchNet(task=task.task, split="test")
+    train_ds = StructureAwareCCDataset(dataset=CodeSearchNet(task=task, split="train"))
+    validation_ds = StructureAwareCCDataset(dataset=CodeSearchNet(task=task, split="validation"))
+    test_ds = StructureAwareCCDataset(dataset=CodeSearchNet(task=task, split="test"))
 
-    data = StructureAwareDataModule(train_dataset=StructureAwareCCDataset(dataset=train_ds),
-                                    validation_dataset=StructureAwareCCDataset(dataset=validation_ds),
-                                    test_dataset=StructureAwareCCDataset(dataset=test_ds),
+    data = StructureAwareDataModule(train_dataset=train_ds,
+                                    validation_dataset=validation_ds,
+                                    test_dataset=test_ds,
                                     micro_batch_size=4,
-                                    global_batch_size=16, )
+                                    global_batch_size=16,
+                                    seq_length=task.max_seq_len,
+                                    num_train_samples=train_ds.num_samples,
+                                    num_val_samples=validation_ds.num_samples,
+                                    num_test_samples=test_ds.num_samples)
 
     model = StructureAwareStarcoder2Model(config=StructureAwareStarcoder2Config())
 
@@ -47,7 +51,7 @@ if __name__ == "__main__":
     trainer = nl.Trainer(
         num_nodes=1,
 	    devices=4,
-        max_steps=4,
+        max_epochs=2,
         accelerator="gpu",
         strategy=strategy,
         plugins=nl.MegatronMixedPrecision(precision="bf16-mixed"),

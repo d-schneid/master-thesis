@@ -1,27 +1,33 @@
 from structure_aware_customization.dataset.structure_aware_dataset import StructureAwareDataset
-from data_preprocessing.datasets.dataset import Dataset as EncapsulatedDataset
+from data_preprocessing.datasets.dataset import Dataset
 
 import torch
 
 
 class StructureAwareCTDataset(StructureAwareDataset):
 
-	def __init__(self, dataset: EncapsulatedDataset) -> None:
+	def __init__(self, dataset: Dataset) -> None:
 		super().__init__(dataset=dataset)
 
 	def __getitem__(self, idx):
 		batch = super().__getitem__(idx)
 
 		text_tokens = batch['text_token_ids']
-		labels = torch.cat([torch.tensor([self.padding_value], dtype=text_tokens.dtype), text_tokens[1:]])
-		loss_mask = torch.cat([torch.tensor([0], dtype=text_tokens.dtype), torch.ones(len(text_tokens[:-1]), dtype=text_tokens.dtype)])
+		labels = torch.cat([text_tokens[1:], torch.tensor([self.padding_value], dtype=text_tokens.dtype)])
+		loss_mask = torch.cat([torch.ones(len(text_tokens[:-1]), dtype=text_tokens.dtype), torch.tensor([0], dtype=text_tokens.dtype)])
 
 		batch['labels'] = labels
 		batch['loss_mask'] = loss_mask
 
 		return batch
 
-	def get_key_not_in(self):
+	def get_2d_tokens_for_max_seq_len_padding(self):
+		return ['attn_text_tokens', 'attn_code_text', 'attn_ast_text', 'attn_dfg_text', 'text_token_rel_pos_ids']
+
+	def get_1d_tokens_for_max_seq_len_padding(self):
+		return super().get_1d_tokens_for_max_seq_len_padding() + ['text_token_ids']
+
+	def get_1d_keys(self):
 		return ['code_token_ids', 'text_token_ids', 'dfg_node_mask', 'lr_paths_len', 'labels', 'loss_mask']
 
 	def get_attn_keys(self):

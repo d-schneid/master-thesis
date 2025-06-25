@@ -22,10 +22,10 @@ if __name__ == '__main__':
 	os.makedirs(os.path.dirname(dataset.h5_path), exist_ok=True)
 	h5_file = h5py.File(dataset.h5_path, 'a')
 
-	taken_samples = list(data.take(10000))
+	taken_samples = list(data.skip(100000).take(5000))
 	taken = Dataset.from_list(taken_samples)
 
-	taken.map(preprocess_data, batched=True, batch_size=2500, fn_kwargs={"data_handler": data_handler,
+	taken.map(preprocess_data, batched=True, batch_size=10000, fn_kwargs={"data_handler": data_handler,
 																		 "sample_counter": sample_counter,
 																		 "global_stats_list": global_stats_list,
 																		 "node_type_to_idx": node_type_to_idx,

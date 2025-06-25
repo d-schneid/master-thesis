@@ -20,6 +20,12 @@ class CodeCompletion(Task):
 	def _generate_sample(self, row):
 		return {}
 
+	def _get_1d_features(self):
+		return []
+
+	def _get_2d_features(self):
+		return []
+
 	def generate_adj_matrix(self, edges, num_nodes):
 		adj_matrix = np.full((num_nodes, num_nodes), self.attn_bias_ignore, dtype=np.float32)
 

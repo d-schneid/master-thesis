@@ -2,20 +2,22 @@ import json
 from abc import ABC, abstractmethod
 
 from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
-from data_preprocessing.datasets.dataset import Dataset as EncapsulatedDataset
+from data_preprocessing.datasets.dataset import Dataset as AbstractDataset
 
 import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 import h5py
+import numpy as np
 
 
 class StructureAwareDataset(ABC, Dataset):
 
-	def __init__(self, dataset: EncapsulatedDataset) -> None:
+	def __init__(self, dataset: AbstractDataset) -> None:
 		super().__init__()
 		self.data_handler = DataHandler(dataset=dataset)
+		self.max_seq_len = dataset.task.max_seq_len
 		self.padding_value = self.data_handler.tokenizer.eos_token_id
 		self.h5_file = h5py.File(dataset.h5_path, 'r')
 
@@ -27,24 +29,32 @@ class StructureAwareDataset(ABC, Dataset):
 			self.metadata = json.load(f)
 		self.pad_tok_id_ast = self.metadata['num_ast_node_types']
 
-		self.data = []
-		for key in self.h5_file.keys():
-			group = self.h5_file[key]
-			sample = {
-				name: torch.from_numpy(dataset[()]) for name, dataset in group.items()
-			}
-			self.data.append(sample)
-
-		self.h5_file.close()
+		self.numpy_to_torch_dtype = {
+			np.uint8: torch.int32,
+			np.uint16: torch.int32,
+			np.float16: torch.bfloat16,
+			np.float32: torch.bfloat16,
+		}
 
 	def __len__(self) -> int:
 		return self.num_samples
 
 	def __getitem__(self, idx):
-		return self.data[idx]
+		key = f'sample_{idx}'
+		group = self.h5_file[key]
+		sample = {
+			name: torch.from_numpy(dataset[()]).to(self.numpy_to_torch_dtype[dataset[()].dtype.type])
+			for name, dataset in group.items()
+		}
+
+		return sample
+
+	def __del__(self):
+		if hasattr(self, 'h5_file') and self.h5_file:
+			self.h5_file.close()
 
 	@abstractmethod
-	def get_key_not_in(self):
+	def get_1d_keys(self):
 		pass
 
 	@abstractmethod
@@ -59,12 +69,47 @@ class StructureAwareDataset(ABC, Dataset):
 	def build_attn_bias(self, batch_dict, first_col_matrix, second_col_matrix, third_col_matrix):
 		pass
 
-	def collate_fn(self, batch):
-		# Initialize a dictionary to store the batch data
-		batch_dict = {}
+	@abstractmethod
+	def get_2d_tokens_for_max_seq_len_padding(self):
+		pass
+
+	def get_1d_tokens_for_max_seq_len_padding(self):
+		return ['labels', 'loss_mask']
+
+	def pad_batch_to_max_seq_len(self, batch_dict):
+		# append padding value to code tokens to pad sequence
+		num_tokens_before = self.get_labels_loss_pad_len(batch_dict)
+
+		for key in self.get_1d_tokens_for_max_seq_len_padding():
+			num_pad_right_tokens = self.max_seq_len - num_tokens_before - batch_dict[key][0].size(0)
+			num_pad_left_tokens = 0
+			if key in ['labels', 'loss_mask']:
+				num_pad_left_tokens = num_tokens_before
+			batch_dict[key] = F.pad(batch_dict[key], (num_pad_left_tokens, num_pad_right_tokens), value=self.padding_value)
+
+		for key in self.get_2d_tokens_for_max_seq_len_padding():
+			max_rows = self.max_seq_len - num_tokens_before
+			max_cols = self.max_seq_len - num_tokens_before
+			padding_value = self.data_handler.task.attn_bias_ignore
+
+			if key in ['attn_code_tokens', 'attn_text_tokens', 'code_token_rel_pos_ids', 'text_token_rel_pos_ids']:
+				if key in ['code_token_rel_pos_ids', 'text_token_rel_pos_ids']:
+					padding_value = self.padding_value
+				batch_dict[key] = torch.stack(pad_2d_tensors(batch_dict[key], padding_value=padding_value,
+															 max_rows=max_rows, max_cols=max_cols))
+			elif key in ['attn_code_ast', 'attn_code_dfg']:
+				keep_num_cols = batch_dict[key].shape[2]
+				batch_dict[key] = torch.stack(pad_2d_tensors(batch_dict[key], padding_value=padding_value,
+															 max_rows=max_rows, max_cols=keep_num_cols))
+			elif key in ['attn_code_text', 'attn_ast_text', 'attn_dfg_text']:
+				keep_num_rows = batch_dict[key].shape[1]
+				batch_dict[key] = torch.stack(pad_2d_tensors(batch_dict[key], padding_value=padding_value,
+															 max_rows=keep_num_rows, max_cols=max_cols))
+
+	def pad_within_batch(self, batch, batch_dict):
 		for key in batch[0].keys():
 			batch_dict[key] = [sample[key] for sample in batch]
-			if key not in self.get_key_not_in():
+			if key not in self.get_1d_keys():
 				if key == 'lr_paths_types':
 					batch_dict[key] = pad_2d_tensors(batch_dict[key], padding_value=self.pad_tok_id_ast)
 				elif key in self.get_attn_keys():
@@ -77,15 +122,9 @@ class StructureAwareDataset(ABC, Dataset):
 				padding_value = PAD_TOK_ID_DFG
 			if key in self.get_attn_keys():
 				padding_value = self.data_handler.task.attn_bias_ignore
+			batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value)
 
-			if key in ['labels', 'loss_mask']:
-				batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value, padding_side='left')
-			else:
-				batch_dict[key] = pad_sequence(batch_dict[key], batch_first=True, padding_value=padding_value)
-
-		pad_len = self.get_labels_loss_pad_len(batch_dict)
-		batch_dict = pad_labels_loss_mask(batch_dict, pad_len)
-
+	def build_attn_mask(self, batch_dict):
 		# individual padded attention masks
 		attn_code_tokens = batch_dict['attn_code_tokens']
 		attn_ast_leaves = batch_dict['attn_ast_leaves']
@@ -115,31 +154,20 @@ class StructureAwareDataset(ABC, Dataset):
 		for key in keys_to_remove:
 			del batch_dict[key]
 
+	def collate_fn(self, batch):
+		# Initialize a dictionary to store the batch data
+		batch_dict = {}
+		self.pad_within_batch(batch, batch_dict)
+		self.pad_batch_to_max_seq_len(batch_dict)
+		self.build_attn_mask(batch_dict)
+
 		return batch_dict
 
 
-def pad_labels_loss_mask(batch_dict, pad_len):
-	labels = batch_dict['labels']
-	loss_mask = batch_dict['loss_mask']
-
-	padded_labels = []
-	padded_loss_mask = []
-
-	for label, mask in zip(labels, loss_mask):
-		padded_label = F.pad(label, (pad_len, 0), value=0)
-		padded_mask = F.pad(mask, (pad_len, 0), value=0)
-		padded_labels.append(padded_label)
-		padded_loss_mask.append(padded_mask)
-
-	batch_dict['labels'] = torch.stack(padded_labels)
-	batch_dict['loss_mask'] = torch.stack(padded_loss_mask)
-
-	return batch_dict
-
-
-def pad_2d_tensors(tensor_list, padding_value, padding_side='right'):
-	max_rows = max(tensor.size(0) for tensor in tensor_list)
-	max_cols = max(tensor.size(1) for tensor in tensor_list)
+def pad_2d_tensors(tensor_list, padding_value, padding_side='right', max_rows=None, max_cols=None):
+	if max_rows is None or max_cols is None:
+		max_rows = max(tensor.size(0) for tensor in tensor_list)
+		max_cols = max(tensor.size(1) for tensor in tensor_list)
 
 	padded_tensors = []
 	for tensor in tensor_list:
@@ -154,9 +182,3 @@ def pad_2d_tensors(tensor_list, padding_value, padding_side='right'):
 		padded_tensors.append(padded_tensor)
 
 	return padded_tensors
-
-
-def pad_inner_lists(list_of_lists, padding_value, padding_side='right'):
-	tensors = [torch.tensor(x) for x in list_of_lists]
-
-	return pad_sequence(tensors, batch_first=True, padding_value=padding_value, padding_side=padding_side) if tensors else [torch.tensor(-1)]

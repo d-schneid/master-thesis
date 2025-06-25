@@ -2,10 +2,12 @@ from data_preprocessing.datasets.dataset import Dataset
 
 from datasets import load_dataset
 
+from data_preprocessing.tasks.task import Task
+
 
 class CornStack(Dataset):
 
-	def __init__(self, task, split='train'):
+	def __init__(self, task: Task, split='train'):
 		super().__init__(dataset='nomic-ai/cornstack-python-v1', task=task, split=split)
 
 	def get_data_cols(self):

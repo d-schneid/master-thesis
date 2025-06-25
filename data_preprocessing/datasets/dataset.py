@@ -3,19 +3,22 @@ import os
 
 from tqdm import tqdm
 
+from data_preprocessing.tasks.task import Task
+
 
 class Dataset(ABC):
 
-	def __init__(self, dataset, task, lang='python', split='train'):
+	def __init__(self, dataset, task: Task, lang='python', split='train'):
 		self.absolute_path = '/Users/i741961/Documents/SAP/Masterthesis/Code/master-thesis/data_preprocessing/data/pretraining'
-		self.save_dir = os.path.join(self.absolute_path, dataset, task, split)
-		self.metadata_path_train = os.path.join(self.absolute_path, dataset, task, 'train', 'metadata.json')
+		self.save_dir = os.path.join(self.absolute_path, dataset, task.task, split)
+		self.metadata_path_train = os.path.join(self.absolute_path, dataset, task.task, 'train', 'metadata.json')
 		self.metadata_path = os.path.join(self.save_dir, 'metadata.json')
 		self.node_type_to_idx_path = os.path.join(self.absolute_path, 'node_type_to_idx.json')
 		self.h5_path = os.path.join(self.save_dir, 'samples.h5')
 		self.dataset = dataset
 		self.lang = lang
 		self.split = split
+		self.task = task
 
 	@abstractmethod
 	def get_data_cols(self):

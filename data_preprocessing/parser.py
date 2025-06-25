@@ -73,7 +73,7 @@ class Parser:
 		tokenized_texts = []
 		for start in tqdm(range(0, len(texts), batch_size)):
 			batch_input_ids = self.tokenizer(texts[start:start + batch_size]).input_ids
-			tokenized_texts.extend([np.array(ids, dtype=np.int32) for ids in batch_input_ids])
+			tokenized_texts.extend([np.array(ids, dtype=np.uint16) for ids in batch_input_ids])
 
 		return tokenized_texts
 

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
-import torch
 
 
 class Task(ABC):
@@ -10,6 +9,7 @@ class Task(ABC):
 		self.task = task
 		self.attn_bias_attend = 0
 		self.attn_bias_ignore = -1e9
+		self.max_seq_len = 2048
 
 	@abstractmethod
 	def compute_attention_masks(self, data):
@@ -40,6 +40,36 @@ class Task(ABC):
 		sample.update(self._generate_sample(row))
 
 		return sample
+
+	def get_max_seq_len_cols(self):
+		return ["code_tokens", "lr_paths_len", "dfg_node_mask"]
+
+	def filter_max_seq_len(self, data):
+		cols = self.get_max_seq_len_cols()
+		length_sums = data.apply(lambda row: sum(len(row[col]) for col in cols), axis=1)
+		data_filtered = data[length_sums <= self.max_seq_len].reset_index(drop=True)
+
+		return data_filtered
+
+	@abstractmethod
+	def _get_1d_features(self):
+		pass
+
+	def get_1d_features(self):
+		features = [("code_token_ids", np.int32), ("lr_paths_len", np.int32), ("dfg_node_mask", np.int32)]
+
+		return features + self._get_1d_features()
+
+	@abstractmethod
+	def _get_2d_features(self):
+		pass
+
+	def get_2d_features(self):
+		features = [("code_token_rel_pos_ids", np.int32), ("ll_sims", np.float16), ("attn_code_tokens", np.float32),
+					("lr_paths_types", np.int32), ("attn_ast_leaves", np.float32), ("attn_dfg_edges", np.float32),
+					("attn_code_ast", np.float32), ("attn_code_dfg", np.float32)]
+
+		return features + self._get_2d_features()
 
 	def build_attention_matrix(self, row, attn_col, num_targets, attn_col_offset):
 		num_code_tokens = len(row['code_tokens'])
