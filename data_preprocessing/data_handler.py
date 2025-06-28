@@ -205,7 +205,7 @@ class DataHandler:
 		]
 		data['lr_paths_len'] = data['lr_paths_types'].apply(lambda row: np.array([len(sublist) for sublist in row], dtype=np.uint16))
 		data['lr_paths_types'] = data['lr_paths_types'].apply(lambda row: self.pad_inner_lists(row))
-		max_ast_depth = max(row.shape[1] for row in data['lr_paths_types'])
+		max_ast_depth = max((row.shape[1] for row in data['lr_paths_types']), default=0)
 
 		return node_type_to_idx, max_ast_depth
 
@@ -247,7 +247,7 @@ class DataHandler:
 
 		updated_node_type_to_idx, max_ast_depth = self.add_ast_lr_paths_and_ll_sim(data, node_type_to_idx)
 		if self.dataset.split != 'train':
-			with open(self.dataset.metadata_path_pretraining, 'r') as f:
+			with open(self.dataset.metadata_path, 'r') as f:
 				metadata_train = json.load(f)
 			max_ast_depth = metadata_train['max_ast_depth']
 			data = data[data['lr_paths_len'].apply(lambda lengths: np.max(lengths) <= max_ast_depth)].reset_index(drop=True)
@@ -255,6 +255,8 @@ class DataHandler:
 		data = self.map_dfg_node_code_token_idices(data)
 		self.add_special_tokens(data)
 		data = self.task.filter_max_seq_len(data)
+		if data.empty:
+			return updated_node_type_to_idx, 0, max_ast_depth, data
 		data = self.task.compute_attention_masks(data)
 		data = data.drop(columns=['dfg_edges', 'ast_leaf_code_token_idxs'])
 		data['code_tokens_rel_pos_ids'] = Parallel(n_jobs=-1)(
@@ -283,18 +285,19 @@ class DataHandler:
 		return dist_matrix.astype(np.uint8)
 
 	def add_special_tokens(self, data):
-		data['code_tokens'] = data['code_tokens'].apply(
-			lambda x: np.concatenate(([self.tokenizer.bos_token_id], x, [self.tokenizer.eos_token_id])).astype(np.uint16)
-		)
-		data['code_tokens_pos_ids'] = data['code_tokens'].apply(lambda x: np.arange(len(x)).astype(np.uint16))
-		data['text_tokens'] = data['text_tokens'].apply(
-			lambda x: np.concatenate(([self.tokenizer.bos_token_id], x, [self.tokenizer.eos_token_id])).astype(np.uint16)
-		)
-		data['text_tokens_pos_ids'] = data['text_tokens'].apply(lambda x: np.arange(len(x)).astype(np.uint16))
+		if not data.empty:
+			data['code_tokens'] = data['code_tokens'].apply(
+				lambda x: np.concatenate(([self.tokenizer.bos_token_id], x, [self.tokenizer.eos_token_id])).astype(np.uint16)
+			)
+			data['code_tokens_pos_ids'] = data['code_tokens'].apply(lambda x: np.arange(len(x)).astype(np.uint16))
+			data['text_tokens'] = data['text_tokens'].apply(
+				lambda x: np.concatenate(([self.tokenizer.bos_token_id], x, [self.tokenizer.eos_token_id])).astype(np.uint16)
+			)
+			data['text_tokens_pos_ids'] = data['text_tokens'].apply(lambda x: np.arange(len(x)).astype(np.uint16))
 
-		# account for BOS token
-		data['ast_leaf_code_token_idxs'] = data['ast_leaf_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
-		data['dfg_node_code_token_idxs'] = data['dfg_node_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
+			# account for BOS token
+			data['ast_leaf_code_token_idxs'] = data['ast_leaf_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
+			data['dfg_node_code_token_idxs'] = data['dfg_node_code_token_idxs'].apply(lambda x: [[x + 1 for x in sublist] for sublist in x])
 
-		# account for padding of BOS and EOS tokens for DFG sequence
-		data['dfg_edges'] = data['dfg_edges'].apply(lambda row: [(x + 1, [y + 1 for y in ys]) for x, ys in row])
+			# account for padding of BOS and EOS tokens for DFG sequence
+			data['dfg_edges'] = data['dfg_edges'].apply(lambda row: [(x + 1, [y + 1 for y in ys]) for x, ys in row])

@@ -21,9 +21,9 @@ if __name__ == '__main__':
 	h5_file = h5py.File(dataset.h5_path, 'a')
 	node_type_to_idx = {}
 
-	batch_size = 500
+	batch_size = 1000
 	dataset_size = 1_000 # needs to be <= num_samples_split
-	num_samples_split = 2_000
+	num_samples_split = 1_000
 	num_processed_samples_split = [0]
 
 	dataset_buffer_lst = []
@@ -53,6 +53,7 @@ if __name__ == '__main__':
 
 			split = "validation"
 			dataset = CornStack(task=task, split=split)
+			data_handler = DataHandler(dataset=dataset, task=task)
 			global_stats_list = []
 			dataset_size = 500 # needs to be <= num_samples_split
 			num_samples_split = 500
@@ -70,6 +71,7 @@ if __name__ == '__main__':
 
 			split = "test"
 			dataset = CornStack(task=task, split=split)
+			data_handler = DataHandler(dataset=dataset, task=task)
 			global_stats_list = []
 			dataset_size = 500 # needs to be <= num_samples_split
 			num_samples_split = 500
