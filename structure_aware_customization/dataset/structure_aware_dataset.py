@@ -21,11 +21,11 @@ class StructureAwareDataset(ABC, Dataset):
 		self.padding_value = self.data_handler.tokenizer.eos_token_id
 		self.h5_file = h5py.File(dataset.h5_path, 'r')
 
-		with open(dataset.metadata_path, 'r') as f:
+		with open(dataset.num_samples_path, 'r') as f:
 			metadata = json.load(f)
 		self.num_samples = metadata['num_samples']
 
-		with open(dataset.metadata_path_train, 'r') as f:
+		with open(dataset.metadata_path_pretraining, 'r') as f:
 			self.metadata = json.load(f)
 		self.pad_tok_id_ast = self.metadata['num_ast_node_types']
 
@@ -154,12 +154,26 @@ class StructureAwareDataset(ABC, Dataset):
 		for key in keys_to_remove:
 			del batch_dict[key]
 
+	def prepare_leaf_embedding(self, batch_dict):
+		batch_size = batch_dict['lr_paths_types'].shape[0]
+		len_longest_lr_path = batch_dict['lr_paths_types'].shape[-1]
+
+		ast_node_heights = torch.arange(len_longest_lr_path, dtype=torch.int32).unsqueeze(0).repeat(batch_size, 1).unsqueeze(1)
+		batch_dict['ast_node_heights'] = ast_node_heights
+
+		len_lr_path_range = torch.arange(len_longest_lr_path).view(1, 1, len_longest_lr_path)
+		lr_paths_len_mask = len_lr_path_range < batch_dict['lr_paths_len'].unsqueeze(-1)
+		batch_dict['lr_paths_len_mask'] = lr_paths_len_mask
+
+		del batch_dict['lr_paths_len']
+
 	def collate_fn(self, batch):
 		# Initialize a dictionary to store the batch data
 		batch_dict = {}
 		self.pad_within_batch(batch, batch_dict)
 		self.pad_batch_to_max_seq_len(batch_dict)
 		self.build_attn_mask(batch_dict)
+		self.prepare_leaf_embedding(batch_dict)
 
 		return batch_dict
 

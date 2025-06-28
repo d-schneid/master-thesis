@@ -1,9 +1,9 @@
-from data_preprocessing.tasks.code_completion import CodeCompletion
+from data_preprocessing.tasks.pretraining import Pretraining
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
 from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
-from structure_aware_customization.dataset.structure_aware_cc_dataset import StructureAwareCCDataset
+from structure_aware_customization.dataset.structure_aware_pretraining_dataset import StructureAwarePretrainingDataset
 from structure_aware_customization.dataset.structure_aware_ct_dataset import StructureAwareCTDataset
 
 from megatron.core.optimizer import OptimizerConfig
@@ -15,10 +15,10 @@ from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 
 
 if __name__ == "__main__":
-    task = CodeCompletion()
-    train_ds = StructureAwareCCDataset(dataset=CodeSearchNet(task=task, split="train"))
-    validation_ds = StructureAwareCCDataset(dataset=CodeSearchNet(task=task, split="validation"))
-    test_ds = StructureAwareCCDataset(dataset=CodeSearchNet(task=task, split="test"))
+    task = Pretraining()
+    train_ds = StructureAwarePretrainingDataset(dataset=CodeSearchNet(task=task, split="train"))
+    validation_ds = StructureAwarePretrainingDataset(dataset=CodeSearchNet(task=task, split="validation"))
+    test_ds = StructureAwarePretrainingDataset(dataset=CodeSearchNet(task=task, split="test"))
 
     data = StructureAwareDataModule(train_dataset=train_ds,
                                     validation_dataset=validation_ds,

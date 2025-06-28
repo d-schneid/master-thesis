@@ -66,7 +66,7 @@ def structure_aware_gpt_data_step(dataloader_iter) -> Dict[str, torch.Tensor]:
 
 	if parallel_state.is_pipeline_first_stage():
 		required_device_keys.update(("code_token_ids", "code_token_rel_pos_ids", "ll_sims", "lr_paths_types",
-									 "lr_paths_len", "dfg_node_mask", "attention_bias"))
+									 "lr_paths_len_mask", "ast_node_heights", "dfg_node_mask", "attention_bias"))
 		if 'text_token_ids' in _batch:
 			required_device_keys.update(("text_token_ids", "text_token_rel_pos_ids"))
 
@@ -118,7 +118,8 @@ def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
 		"code_token_rel_pos_ids": batch["code_token_rel_pos_ids"],
 		"ll_sims": batch["ll_sims"],
 		"lr_paths_types": batch["lr_paths_types"],
-		"lr_paths_len": batch["lr_paths_len"],
+		"lr_paths_len_mask": batch["lr_paths_len_mask"],
+		"ast_node_heights": batch["ast_node_heights"],
 		"dfg_node_mask": batch["dfg_node_mask"],
 		"attention_bias": batch["attention_bias"],
 		"labels": batch["labels"],
@@ -156,7 +157,7 @@ class StructureAwareStarcoder2Config(Starcoder2Config3B):
 	def __post_init__(self):
 		super().__post_init__()
 
-		with open('../../data/pretraining/metadata.json', 'r') as f_metadata:
+		with open('../../data/metadata_pretraining/metadata.json', 'r') as f_metadata:
 			metadata = json.load(f_metadata)
 
 		self.num_ast_node_types = metadata['num_ast_node_types']

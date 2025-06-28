@@ -8,14 +8,17 @@ from data_preprocessing.tasks.task import Task
 
 class Dataset(ABC):
 
-	def __init__(self, dataset, task: Task, lang='python', split='train'):
-		self.absolute_path = '/Users/i741961/Documents/SAP/Masterthesis/Code/master-thesis/data_preprocessing/data/pretraining'
-		self.save_dir = os.path.join(self.absolute_path, dataset, task.task, split)
-		self.metadata_path_train = os.path.join(self.absolute_path, dataset, task.task, 'train', 'metadata.json')
-		self.metadata_path = os.path.join(self.save_dir, 'metadata.json')
-		self.node_type_to_idx_path = os.path.join(self.absolute_path, 'node_type_to_idx.json')
+	def __init__(self, hf_dataset, dataset_save_dir, task: Task, lang='python', split='train'):
+		self.absolute_path = '/Users/i741961/Documents/SAP/Masterthesis/Code/master-thesis/data_preprocessing/data'
+		self.save_dir = os.path.join(self.absolute_path, dataset_save_dir, task.task, split)
+		self.num_samples_path = os.path.join(self.save_dir, 'num_samples.json')
+		self.metadata_dir = os.path.join(self.absolute_path, 'metadata_pretraining')
+		self.metadata_path_pretraining = os.path.join(self.metadata_dir, 'metadata.json')
+		self.metadata_dir_dataset = os.path.join(self.metadata_dir, dataset_save_dir)
+		self.metadata_path = os.path.join(self.metadata_dir_dataset, 'metadata.json')
+		self.node_type_to_idx_path = os.path.join(self.metadata_dir, 'node_type_to_idx.json')
 		self.h5_path = os.path.join(self.save_dir, 'samples.h5')
-		self.dataset = dataset
+		self.hf_dataset = hf_dataset
 		self.lang = lang
 		self.split = split
 		self.task = task

@@ -1,7 +1,8 @@
-from typing import Annotated, Callable, Optional, TYPE_CHECKING
+from typing import Annotated, Callable, Optional, TYPE_CHECKING, Any
 from pathlib import Path
 
 import torch
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
 
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
@@ -35,7 +36,8 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 			code_token_rel_pos_ids: torch.Tensor,
 			ll_sims: torch.Tensor,
 			lr_paths_types: torch.Tensor,
-			lr_paths_len: torch.Tensor,
+			lr_paths_len_mask: torch.Tensor,
+			ast_node_heights: torch.Tensor,
 			dfg_node_mask: torch.Tensor,
 			attention_bias: torch.Tensor,
 			text_token_ids: Optional[torch.Tensor] = None,
@@ -52,7 +54,8 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 			code_token_rel_pos_ids=code_token_rel_pos_ids,
 			ll_sims=ll_sims,
 			lr_paths_types=lr_paths_types,
-			lr_paths_len=lr_paths_len,
+			lr_paths_len_mask=lr_paths_len_mask,
+			ast_node_heights=ast_node_heights,
 			dfg_node_mask=dfg_node_mask,
 			attention_bias=attention_bias,
 			text_token_ids=text_token_ids,

@@ -3,10 +3,10 @@ from data_preprocessing.tasks.task import Task
 import numpy as np
 
 
-class CodeCompletion(Task):
+class Pretraining(Task):
 
 	def __init__(self):
-		super().__init__(task='code_completion')
+		super().__init__(task='pretraining')
 
 	def get_cols(self):
 		return [
@@ -31,7 +31,7 @@ class CodeCompletion(Task):
 
 		for to_node, from_nodes in edges:
 			for from_node in from_nodes:
-				if from_node <= to_node: # account for masked attention in code completion
+				if from_node <= to_node: # account for masked attention in pretraining
 					adj_matrix[to_node, from_node] = self.attn_bias_attend
 
 		return adj_matrix
@@ -39,10 +39,10 @@ class CodeCompletion(Task):
 	def compute_attention_masks(self, data):
 		data['attn_code_tokens'] = data['code_tokens'].apply(self.masked_attention)
 		data['attn_ast_leaves'] = data['lr_paths_len'].apply(self.masked_attention)
-		data['attn_dfg_edges'] = data.apply(lambda row:
-											self.generate_adj_matrix(row['dfg_edges'], len(row['dfg_node_mask'])),
-											axis=1
-											)
+		data['attn_dfg_edges'] = data.apply(
+			lambda row: self.generate_adj_matrix(row['dfg_edges'], len(row['dfg_node_mask'])),
+			axis=1
+		)
 
 		data['attn_code_ast'] = data.apply(
 			lambda row: self.build_attention_matrix(

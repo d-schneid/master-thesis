@@ -1,19 +1,19 @@
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
-from data_preprocessing.tasks.code_completion import CodeCompletion
+from data_preprocessing.tasks.pretraining import Pretraining
 from data_preprocessing.tasks.code_text import CodeText
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
-from structure_aware_customization.dataset.structure_aware_cc_dataset import StructureAwareCCDataset
+from structure_aware_customization.dataset.structure_aware_pretraining_dataset import StructureAwarePretrainingDataset
 from structure_aware_customization.dataset.structure_aware_ct_dataset import StructureAwareCTDataset
 
 
 if __name__ == "__main__":
-	task = CodeCompletion()
+	task = Pretraining()
 	train_ds = CodeSearchNet(task=task.task, split="train")
 	valid_ds = CodeSearchNet(task=task.task, split="validation")
 	test_ds = CodeSearchNet(task=task.task, split="test")
-	data_module = StructureAwareDataModule(train_dataset=StructureAwareCCDataset(dataset=train_ds),
-									validation_dataset=StructureAwareCCDataset(dataset=valid_ds),
-									test_dataset=StructureAwareCCDataset(dataset=test_ds),)
+	data_module = StructureAwareDataModule(train_dataset=StructureAwarePretrainingDataset(dataset=train_ds),
+										   validation_dataset=StructureAwarePretrainingDataset(dataset=valid_ds),
+										   test_dataset=StructureAwarePretrainingDataset(dataset=test_ds), )
 	data_module.setup()
 
 	dataloader = data_module.train_dataloader()

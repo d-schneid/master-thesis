@@ -95,7 +95,8 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 			code_token_rel_pos_ids: Tensor,
 			ll_sims: Tensor,
 			lr_paths_types: Tensor,
-			lr_paths_len: Tensor,
+			lr_paths_len_mask: Tensor,
+			ast_node_heights: Tensor,
 			dfg_node_mask: Tensor,
 			attention_bias: Tensor,
 			attention_mask: Tensor,
@@ -121,21 +122,17 @@ class StructureAwareMCoreGPTModel(MCoreGPTModel):
 				text_token_embedding = self.embedding(input_ids=text_token_ids, position_ids=None)
 				code_text_token_embedding = torch.cat((code_text_token_embedding, text_token_embedding), dim=0)
 
-			ast_node_type_embedding = self.ast_node_type_embedding(input_ids=lr_paths_types, position_ids=None)
-			len_longest_lr_path = lr_paths_types.shape[-1]
-			node_heights = torch.tensor([[i] for i in range(len_longest_lr_path)], device=lr_paths_types.device)
-			ast_node_depth_embedding = self.ast_node_depth_embedding(input_ids=node_heights, position_ids=None).unsqueeze(0)
-			leaf_embedding_mult = ast_node_type_embedding * ast_node_depth_embedding
+			ast_node_type_embeddings = self.ast_node_type_embedding(input_ids=lr_paths_types, position_ids=None)
+			ast_node_depth_embeddings = self.ast_node_depth_embedding(input_ids=ast_node_heights, position_ids=None)
+			leaf_embeddings_mult = ast_node_type_embeddings * ast_node_depth_embeddings
 
-			range_tensor = torch.arange(len_longest_lr_path).view(1,1,len_longest_lr_path).to(lr_paths_types.device)
-			path_mask = range_tensor < lr_paths_len.T.unsqueeze(-1)
-			path_mask = path_mask.unsqueeze(-1)
-			leaf_embedding_mask = leaf_embedding_mult * path_mask
-			final_leaf_embedding = leaf_embedding_mask.sum(dim=2)
+			lr_paths_len_mask = lr_paths_len_mask.permute(1, 0, 2).unsqueeze(-1)
+			leaf_embedding_mask = leaf_embeddings_mult * lr_paths_len_mask
+			final_leaf_embeddings = leaf_embedding_mask.sum(dim=2)
 
 			dfg_node_embedding = self.dfg_node_embedding(input_ids=dfg_node_mask, position_ids=None)
 
-			decoder_input = torch.cat((final_leaf_embedding, dfg_node_embedding, code_text_token_embedding), dim=0)
+			decoder_input = torch.cat((final_leaf_embeddings, dfg_node_embedding, code_text_token_embedding), dim=0)
 		else:
 			# intermediate stage of pipeline
 			# decoder will get hidden_states from encoder.input_tensor

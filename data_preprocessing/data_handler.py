@@ -11,7 +11,7 @@ from transformers import AutoTokenizer
 import pandas as pd
 
 from data_preprocessing.tasks.task import Task
-from data_preprocessing.tasks.code_completion import CodeCompletion
+from data_preprocessing.tasks.pretraining import Pretraining
 from data_preprocessing.datasets.dataset import Dataset
 
 tqdm.pandas()
@@ -20,37 +20,9 @@ START_TOK_ID_DFG = 0
 PAD_TOK_ID_DFG = 2
 
 
-def compute_lr_paths_and_ll_sim(lr_paths_types):
-
-	def get_ll_sim(lr_path1, lr_path2):
-		node_types = [node for node in lr_path1 + lr_path2]
-		if '<START_AST>' in node_types or '<END_AST>' in node_types:
-			return 0
-		common = 1  # root is always common
-
-		for i in range(2, min(len(lr_path1), len(lr_path2)) + 1):
-			if lr_path1[-i] == lr_path2[-i]:
-				common += 1
-			else:
-				break
-
-		return common * common / (len(lr_path1) * len(lr_path2))
-
-	num_ast_leaves = len(lr_paths_types)
-	ll_sims = np.eye(num_ast_leaves, dtype=np.float16)
-
-	# optimize indices for upper triangular matrix and <START_AST> and <END_AST> tokens
-	for i in range(1, num_ast_leaves - 1):
-		for j in range(i + 1, num_ast_leaves - 1):
-			sim = get_ll_sim(lr_paths_types[i], lr_paths_types[j])
-			ll_sims[i, j] = ll_sims[j, i] = sim
-
-	return ll_sims
-
-
 class DataHandler:
 
-	def __init__(self, dataset: Dataset, task: Task=CodeCompletion(),
+	def __init__(self, dataset: Dataset, task: Task=Pretraining(),
 				 tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b')):
 		self.save_dir = dataset.save_dir
 		self.dataset = dataset
@@ -165,17 +137,31 @@ class DataHandler:
 
 		return data
 
+	def compute_lr_paths_and_ll_sim(self, lr_paths_types):
+		num_ast_leaves = min(len(lr_paths_types), self.task.max_seq_len) # upper bound
+		ll_sims = np.eye(num_ast_leaves, dtype=np.float16)
+
+		# optimize indices for upper triangular matrix and <START_AST> and <END_AST> tokens
+		for i in range(1, num_ast_leaves - 1):
+			for j in range(i + 1, num_ast_leaves - 1):
+				sim = self.get_ll_sim(lr_paths_types[i], lr_paths_types[j])
+				ll_sims[i, j] = ll_sims[j, i] = sim
+
+		return ll_sims
+
 	def get_ll_sim(self, lr_path1, lr_path2):
-		node_types = [node.type for node in lr_path1 + lr_path2]
-		if '<START_AST>' in node_types or '<END_AST>' in node_types: return 0
-		common = 1 # root is always common
+		num_common_nodes = 1 # root is always common
+
 		for i in range(2, min(len(lr_path1), len(lr_path2)) + 1):
 			if lr_path1[-i] == lr_path2[-i]:
-				common += 1
+				num_common_nodes += 1
 			else:
-				break
+				continue
 
-		return common * common / (len(lr_path1) * len(lr_path2))
+		numerator = num_common_nodes * num_common_nodes
+		denominator = len(lr_path1) * len(lr_path2)
+
+		return numerator / denominator
 
 	def pad_inner_lists(self, row, pad_value=0):
 		max_len = max(len(sublist) for sublist in row)
@@ -196,7 +182,7 @@ class DataHandler:
 
 		data.drop(columns=['ast_leaves'], inplace=True)
 		data['ll_sims'] = Parallel(n_jobs=-1)(
-			delayed(compute_lr_paths_and_ll_sim)(curr_lr_paths_types)
+			delayed(self.compute_lr_paths_and_ll_sim)(curr_lr_paths_types)
 			for curr_lr_paths_types in tqdm(lr_paths_types)
 		)
 		max_node_idx = max(node_type_to_idx.values()) if node_type_to_idx else 0
@@ -261,7 +247,7 @@ class DataHandler:
 
 		updated_node_type_to_idx, max_ast_depth = self.add_ast_lr_paths_and_ll_sim(data, node_type_to_idx)
 		if self.dataset.split != 'train':
-			with open(self.dataset.metadata_path_train, 'r') as f:
+			with open(self.dataset.metadata_path_pretraining, 'r') as f:
 				metadata_train = json.load(f)
 			max_ast_depth = metadata_train['max_ast_depth']
 			data = data[data['lr_paths_len'].apply(lambda lengths: np.max(lengths) <= max_ast_depth)].reset_index(drop=True)

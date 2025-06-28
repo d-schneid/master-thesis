@@ -8,10 +8,10 @@ from data_preprocessing.tasks.task import Task
 class CodeSearchNet(Dataset):
 
 	def __init__(self, task: Task, split='train'):
-		super().__init__(dataset='code-search-net/code_search_net', task=task, split=split)
+		super().__init__(hf_dataset='code-search-net/code_search_net', dataset_save_dir='code_search_net', task=task, split=split)
 
 	def get_data_cols(self):
 		return 'func_documentation_string', 'func_code_string'
 
 	def load_dataset(self):
-		return load_dataset(self.dataset, self.lang)[self.split]
+		return load_dataset(self.hf_dataset, self.lang)[self.split]

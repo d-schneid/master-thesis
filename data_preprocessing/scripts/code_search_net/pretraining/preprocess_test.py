@@ -1,23 +1,22 @@
-from itertools import count
 import json
 import os
 
 from data_preprocessing.data_handler import DataHandler
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
-from data_preprocessing.tasks.code_completion import CodeCompletion
-from data_preprocessing.scripts.preprocess_data import preprocess_data, store_global_stats, initialize_hdf5_file
+from data_preprocessing.tasks.pretraining import Pretraining
+from data_preprocessing.scripts.preprocess_data import preprocess_data, store_global_stats
 
 import h5py
 
 
 if __name__ == '__main__':
-	num_samples = 5000
-	task = CodeCompletion()
-	dataset = CodeSearchNet(task=task.task, split='validation')
+	num_samples = 100
+	task = Pretraining()
+	dataset = CodeSearchNet(task=task, split='test')
 	data = dataset.load_dataset().select(range(num_samples))
 	data_handler = DataHandler(dataset=dataset, task=task)
 
-	sample_counter = count()
+	num_processed_samples_split = [0]
 	global_stats_list = []
 	with open(dataset.node_type_to_idx_path, 'r') as f:
 		node_type_to_idx = json.load(f)
@@ -25,11 +24,11 @@ if __name__ == '__main__':
 	h5_file = h5py.File(dataset.h5_path, 'a')
 
 	data.map(preprocess_data, batched=True, batch_size=2500, fn_kwargs={"data_handler": data_handler,
-																	   "sample_counter": sample_counter,
+																	   "num_processed_samples_split": num_processed_samples_split,
 																		"global_stats_list": global_stats_list,
 																		"node_type_to_idx": node_type_to_idx,
-																		"h5_file": h5_file})
+																	   "h5_file": h5_file})
 
-	store_global_stats(global_stats_list, node_type_to_idx, dataset, next(sample_counter))
+	store_global_stats(global_stats_list, node_type_to_idx, dataset, num_processed_samples_split[0])
 
 	h5_file.close()

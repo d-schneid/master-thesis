@@ -9,7 +9,7 @@ class Task(ABC):
 		self.task = task
 		self.attn_bias_attend = 0
 		self.attn_bias_ignore = -1e9
-		self.max_seq_len = 2048
+		self.max_seq_len = 1024
 
 	@abstractmethod
 	def compute_attention_masks(self, data):
