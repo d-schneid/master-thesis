@@ -1,8 +1,7 @@
-from data_preprocessing.datasets.dataset import Dataset
-
 from datasets import load_dataset
 
 from data_preprocessing.tasks.task import Task
+from data_preprocessing.datasets.dataset import Dataset
 
 
 class CodeSearchNet(Dataset):

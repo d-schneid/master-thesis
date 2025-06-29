@@ -14,20 +14,29 @@ import numpy as np
 
 class StructureAwareDataset(ABC, Dataset):
 
-	def __init__(self, dataset: AbstractDataset) -> None:
+	def __init__(self, datasets: list[AbstractDataset]) -> None:
 		super().__init__()
-		self.data_handler = DataHandler(dataset=dataset)
-		self.max_seq_len = dataset.task.max_seq_len
+		self.data_handler = DataHandler(dataset=datasets[0])
+		self.max_seq_len = datasets[0].task.max_seq_len
 		self.padding_value = self.data_handler.tokenizer.eos_token_id
-		self.h5_file = h5py.File(dataset.h5_path, 'r')
+		self.h5_files = []
+		self.sample_idx_ranges = []
+		self.num_samples = 0
 
-		with open(dataset.num_samples_path, 'r') as f:
-			metadata = json.load(f)
-		self.num_samples = metadata['num_samples']
+		for file_idx, ds in enumerate(datasets):
+			h5_file = h5py.File(ds.h5_path, 'r')
+			self.h5_files.append(h5_file)
 
-		with open(dataset.metadata_path_pretraining, 'r') as f:
-			self.metadata = json.load(f)
-		self.pad_tok_id_ast = self.metadata['num_ast_node_types']
+			with open(ds.num_samples_path, 'r') as f:
+				num_samples_ds = json.load(f)['num_samples']
+
+			start_idx = self.num_samples
+			end_idx = start_idx + num_samples_ds
+			self.sample_idx_ranges.append((start_idx, end_idx, file_idx))
+			self.num_samples = end_idx
+
+		with open(datasets[0].metadata_path_pretraining, 'r') as f:
+			self.pad_tok_id_ast = json.load(f)['num_ast_node_types']
 
 		self.numpy_to_torch_dtype = {
 			np.uint8: torch.int32,
@@ -40,18 +49,27 @@ class StructureAwareDataset(ABC, Dataset):
 		return self.num_samples
 
 	def __getitem__(self, idx):
-		key = f'sample_{idx}'
-		group = self.h5_file[key]
-		sample = {
-			name: torch.from_numpy(dataset[()]).to(self.numpy_to_torch_dtype[dataset[()].dtype.type])
-			for name, dataset in group.items()
-		}
+		for start_idx, end_idx, file_idx in self.sample_idx_ranges:
+			if start_idx <= idx < end_idx:
+				file_local_sample_idx = idx - start_idx
+				key = f'sample_{file_local_sample_idx}'
+				group = self.h5_files[file_idx][key]
 
-		return sample
+				sample = {}
+				for name, dataset in group.items():
+					np_array = dataset[()]
+					torch_dtype = self.numpy_to_torch_dtype[np_array.dtype.type]
+					sample[name] = torch.from_numpy(np_array).to(torch_dtype)
+
+				return sample
+
+		raise IndexError(f"Index {idx} out of range for dataset with {self.num_samples} samples.")
 
 	def __del__(self):
-		if hasattr(self, 'h5_file') and self.h5_file:
-			self.h5_file.close()
+		if hasattr(self, 'h5_files'):
+			for h5_file in self.h5_files:
+				if h5_file:
+					h5_file.close()
 
 	@abstractmethod
 	def get_1d_keys(self):

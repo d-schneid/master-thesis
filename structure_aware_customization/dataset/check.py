@@ -11,9 +11,9 @@ if __name__ == "__main__":
 	train_ds = CodeSearchNet(task=task.task, split="train")
 	valid_ds = CodeSearchNet(task=task.task, split="validation")
 	test_ds = CodeSearchNet(task=task.task, split="test")
-	data_module = StructureAwareDataModule(train_dataset=StructureAwarePretrainingDataset(dataset=train_ds),
-										   validation_dataset=StructureAwarePretrainingDataset(dataset=valid_ds),
-										   test_dataset=StructureAwarePretrainingDataset(dataset=test_ds), )
+	data_module = StructureAwareDataModule(train_dataset=StructureAwarePretrainingDataset(datasets=train_ds),
+										   validation_dataset=StructureAwarePretrainingDataset(datasets=valid_ds),
+										   test_dataset=StructureAwarePretrainingDataset(datasets=test_ds), )
 	data_module.setup()
 
 	dataloader = data_module.train_dataloader()

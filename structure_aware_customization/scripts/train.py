@@ -1,5 +1,7 @@
 from data_preprocessing.tasks.pretraining import Pretraining
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
+from data_preprocessing.datasets.cornstack import CornStack
+from data_preprocessing.datasets.stack import Stack
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
 from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
@@ -16,9 +18,12 @@ from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 
 if __name__ == "__main__":
     task = Pretraining()
-    train_ds = StructureAwarePretrainingDataset(dataset=CodeSearchNet(task=task, split="train"))
-    validation_ds = StructureAwarePretrainingDataset(dataset=CodeSearchNet(task=task, split="validation"))
-    test_ds = StructureAwarePretrainingDataset(dataset=CodeSearchNet(task=task, split="test"))
+    train_datasets = [CornStack(task=task, split="train"), CodeSearchNet(task=task, split="train"), Stack(task=task, split="train")]
+    validation_datasets = [CornStack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), Stack(task=task, split="validation")]
+    test_datasets = [CornStack(task=task, split="test"), CodeSearchNet(task=task, split="test"), Stack(task=task, split="test")]
+    train_ds = StructureAwarePretrainingDataset(datasets=train_datasets)
+    validation_ds = StructureAwarePretrainingDataset(datasets=validation_datasets)
+    test_ds = StructureAwarePretrainingDataset(datasets=test_datasets)
 
     data = StructureAwareDataModule(train_dataset=train_ds,
                                     validation_dataset=validation_ds,

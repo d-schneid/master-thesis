@@ -6,8 +6,8 @@ import torch
 
 class StructureAwarePretrainingDataset(StructureAwareDataset):
 
-	def __init__(self, dataset: Dataset) -> None:
-		super().__init__(dataset=dataset)
+	def __init__(self, datasets: list[Dataset]) -> None:
+		super().__init__(datasets=datasets)
 
 	def __getitem__(self, idx):
 		batch = super().__getitem__(idx)

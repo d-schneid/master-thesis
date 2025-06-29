@@ -21,14 +21,15 @@ if __name__ == '__main__':
 	h5_file = h5py.File(dataset.h5_path, 'a')
 	node_type_to_idx = {}
 
-	batch_size = 1000
-	dataset_size = 1_000 # needs to be <= num_samples_split
-	num_samples_split = 1_000
+	batch_size = 5000
+	dataset_size = 10_000 # needs to be <= num_samples_split
+	num_samples_split = 10_000
 	num_processed_samples_split = [0]
 
 	dataset_buffer_lst = []
 	streamed_data = dataset.load_dataset()
-	shuffled_stream = streamed_data.shuffle(seed=42, buffer_size=1_000)
+	selected_data = streamed_data.map(lambda x: {k: x[k] for k in dataset.get_data_cols()})
+	shuffled_stream = streamed_data.shuffle(seed=42, buffer_size=100_000)
 
 	for sample in shuffled_stream:
 		dataset_buffer_lst.append(sample)
@@ -55,8 +56,8 @@ if __name__ == '__main__':
 			dataset = CornStack(task=task, split=split)
 			data_handler = DataHandler(dataset=dataset, task=task)
 			global_stats_list = []
-			dataset_size = 500 # needs to be <= num_samples_split
-			num_samples_split = 500
+			dataset_size = 10_000 # needs to be <= num_samples_split
+			num_samples_split = 10_000
 			num_processed_samples_split[0] = 0
 
 			os.makedirs(os.path.dirname(dataset.h5_path), exist_ok=True)
@@ -73,8 +74,8 @@ if __name__ == '__main__':
 			dataset = CornStack(task=task, split=split)
 			data_handler = DataHandler(dataset=dataset, task=task)
 			global_stats_list = []
-			dataset_size = 500 # needs to be <= num_samples_split
-			num_samples_split = 500
+			dataset_size = 10_000 # needs to be <= num_samples_split
+			num_samples_split = 10_000
 			num_processed_samples_split[0] = 0
 
 			os.makedirs(os.path.dirname(dataset.h5_path), exist_ok=True)
