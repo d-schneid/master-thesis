@@ -1,7 +1,6 @@
 from data_preprocessing.tasks.task import Task
 
 import numpy as np
-import torch
 
 
 class CodeText(Task):

@@ -18,6 +18,7 @@ tqdm.pandas()
 
 START_TOK_ID_DFG = 0
 PAD_TOK_ID_DFG = 2
+NUM_CPUS = 6
 
 
 class DataHandler:
@@ -181,7 +182,7 @@ class DataHandler:
 			all_node_types.update(set(np.concatenate(lr_paths_types[-1])))
 
 		data.drop(columns=['ast_leaves'], inplace=True)
-		data['ll_sims'] = Parallel(n_jobs=-1)(
+		data['ll_sims'] = Parallel(n_jobs=NUM_CPUS)(
 			delayed(self.compute_lr_paths_and_ll_sim)(curr_lr_paths_types)
 			for curr_lr_paths_types in tqdm(lr_paths_types)
 		)
@@ -259,11 +260,11 @@ class DataHandler:
 			return updated_node_type_to_idx, 0, max_ast_depth, data
 		data = self.task.compute_attention_masks(data)
 		data = data.drop(columns=['dfg_edges', 'ast_leaf_code_token_idxs'])
-		data['code_tokens_rel_pos_ids'] = Parallel(n_jobs=-1)(
+		data['code_tokens_rel_pos_ids'] = Parallel(n_jobs=NUM_CPUS)(
 			delayed(self.compute_relative_distances)(pos_str)
 			for pos_str in tqdm(data['code_tokens_pos_ids'])
 		)
-		data['text_tokens_rel_pos_ids'] = Parallel(n_jobs=-1)(
+		data['text_tokens_rel_pos_ids'] = Parallel(n_jobs=NUM_CPUS)(
 			delayed(self.compute_relative_distances)(pos_str)
 			for pos_str in tqdm(data['text_tokens_pos_ids'])
 		)

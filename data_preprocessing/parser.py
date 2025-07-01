@@ -9,7 +9,7 @@ from data_preprocessing.dfg_parser import DfgParser
 
 class Parser:
 
-	def __init__(self, tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-7b'), parse_lang=Language(tspython.language())):
+	def __init__(self, tokenizer=AutoTokenizer.from_pretrained('bigcode/starcoder2-3b'), parse_lang=Language(tspython.language())):
 		self.tokenizer = tokenizer
 		self.ast_parser = TSParser(parse_lang)
 		self.dfg_parser = DfgParser()

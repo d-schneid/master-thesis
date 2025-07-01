@@ -2,7 +2,6 @@ from typing import Annotated, Callable, Optional, TYPE_CHECKING, Any
 from pathlib import Path
 
 import torch
-from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
 
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config

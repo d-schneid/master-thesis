@@ -10,7 +10,7 @@ import h5py
 
 if __name__ == '__main__':
 	task = CodeText()
-	dataset = CornStack(task=task.task, split="train")
+	dataset = CornStack(task=task, split="train")
 	data = dataset.load_dataset()
 	data_handler = DataHandler(dataset=dataset, task=task)
 
