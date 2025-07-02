@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import os
+import json
 
 from tqdm import tqdm
 
@@ -22,6 +23,12 @@ class Dataset(ABC):
 		self.lang = lang
 		self.split = split
 		self.task = task
+
+	def get_h5_metadata(self):
+		with open(self.num_samples_path, 'r') as f:
+			num_samples = json.load(f)['num_samples']
+
+		return [(self.h5_path, num_samples)]
 
 	@abstractmethod
 	def get_data_cols(self):

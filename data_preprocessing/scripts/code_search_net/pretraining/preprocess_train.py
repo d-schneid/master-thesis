@@ -10,10 +10,9 @@ import h5py
 
 
 if __name__ == '__main__':
-	num_samples = 100
 	task = Pretraining()
 	dataset = CodeSearchNet(task=task, split='train')
-	data = dataset.load_dataset().select(range(num_samples))
+	data = dataset.load_dataset()
 	data_handler = DataHandler(dataset=dataset, task=task)
 
 	num_processed_samples_split = [0]
@@ -23,7 +22,7 @@ if __name__ == '__main__':
 	os.makedirs(os.path.dirname(dataset.h5_path), exist_ok=True)
 	h5_file = h5py.File(dataset.h5_path, 'a')
 
-	data.map(preprocess_data, batched=True, batch_size=5000, fn_kwargs={"data_handler": data_handler,
+	data.map(preprocess_data, batched=True, batch_size=10_000, fn_kwargs={"data_handler": data_handler,
 																	    "num_processed_samples_split": num_processed_samples_split,
 																	    "global_stats_list": global_stats_list,
 																	    "node_type_to_idx": node_type_to_idx,

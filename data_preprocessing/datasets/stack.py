@@ -14,4 +14,4 @@ class Stack(Dataset):
 		return 'sha1', 'content'
 
 	def load_dataset(self):
-		return load_dataset(self.hf_dataset, split="train")
+		return load_dataset(self.hf_dataset, split="train", streaming=True)

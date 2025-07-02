@@ -23,16 +23,14 @@ class StructureAwareDataset(ABC, Dataset):
 		self.sample_idx_ranges = []
 		self.num_samples = 0
 
-		for file_idx, ds in enumerate(datasets):
-			h5_file = h5py.File(ds.h5_path, 'r')
-			self.h5_files.append(h5_file)
-
-			with open(ds.num_samples_path, 'r') as f:
-				num_samples_ds = json.load(f)['num_samples']
+		h5_metadata = [h5_metadata for ds in datasets for h5_metadata in ds.get_h5_metadata()]
+		for file_idx, (h5_path, h5_num_samples) in enumerate(h5_metadata):
+			h5_file_handle = h5py.File(h5_path, 'r')
+			self.h5_files.append(h5_file_handle)
 
 			start_idx = self.num_samples
-			end_idx = start_idx + num_samples_ds
-			self.sample_idx_ranges.append((start_idx, end_idx, file_idx))
+			end_idx = start_idx + h5_num_samples
+			self.sample_idx_ranges.append((file_idx, start_idx, end_idx))
 			self.num_samples = end_idx
 
 		with open(datasets[0].metadata_path_pretraining, 'r') as f:
@@ -49,10 +47,10 @@ class StructureAwareDataset(ABC, Dataset):
 		return self.num_samples
 
 	def __getitem__(self, idx):
-		for start_idx, end_idx, file_idx in self.sample_idx_ranges:
+		for file_idx, start_idx, end_idx in self.sample_idx_ranges:
 			if start_idx <= idx < end_idx:
-				file_local_sample_idx = idx - start_idx
-				key = f'sample_{file_local_sample_idx}'
+				file_sample_idx = idx - start_idx
+				key = f'sample_{file_sample_idx}'
 				group = self.h5_files[file_idx][key]
 
 				sample = {}

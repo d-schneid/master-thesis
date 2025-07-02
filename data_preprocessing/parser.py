@@ -108,7 +108,7 @@ class Parser:
 				if decoded_code[i] == code[j]:
 					decoded_code_to_code.append(j)
 					j += 1
-				elif decoded_code[i] == code[j + 1]:  # if decoded_code missed a space
+				elif j + 1 < len(code) and decoded_code[i] == code[j + 1]:  # if decoded_code missed a space
 					decoded_code_to_code.append(j + 1)
 					j += 2
 				else:
