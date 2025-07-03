@@ -39,8 +39,8 @@ def preprocess_data(batch, data_handler, num_processed_samples_split, global_sta
 	})
 
 
-def store_global_stats(global_stats_list, node_type_to_idx, dataset, num_samples):
-	with open(dataset.num_samples_path, 'w') as f:
+def store_global_stats(global_stats_list, node_type_to_idx, dataset, num_samples, num_samples_path, metadata_dir_dataset, metadata_path):
+	with open(num_samples_path, 'w') as f:
 		json.dump({
 			"num_samples": int(num_samples)
 		},
@@ -58,8 +58,8 @@ def store_global_stats(global_stats_list, node_type_to_idx, dataset, num_samples
 			"max_ast_depth": int(max_ast_depth),
 			"max_code_token_rel_pos": int(max_code_token_rel_pos),
 		}
-		os.makedirs(dataset.metadata_dir_dataset, exist_ok=True)
-		with open(dataset.metadata_path, 'w') as f:
+		os.makedirs(metadata_dir_dataset, exist_ok=True)
+		with open(metadata_path, 'w') as f:
 			json.dump(metadata, f)
 		with open(dataset.node_type_to_idx_path, 'w') as f:
 			json.dump(node_type_to_idx, f)
