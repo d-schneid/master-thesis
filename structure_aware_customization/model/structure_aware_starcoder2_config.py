@@ -2,7 +2,7 @@ import json
 from typing import Callable, Dict, Union
 from dataclasses import dataclass, field
 
-from structure_aware_mcore_gpt_model import StructureAwareMCoreGPTModel
+from structure_aware_customization.model.structure_aware_mcore_gpt_model import StructureAwareMCoreGPTModel
 from structure_aware_customization.self_attention.structure_aware_layer_spec import structure_aware_layer_spec
 
 import torch

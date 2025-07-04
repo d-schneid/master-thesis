@@ -1,7 +1,7 @@
 import warnings
 from typing import Optional
 
-from structure_aware_self_attention import StructureAwareSelfAttention
+from structure_aware_customization.self_attention.structure_aware_self_attention import StructureAwareSelfAttention
 from structure_aware_customization.transformer.structure_aware_transformer_layer import StructureAwareTransformerLayer
 
 from megatron.core.transformer.spec_utils import ModuleSpec
