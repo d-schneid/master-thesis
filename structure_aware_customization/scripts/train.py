@@ -29,7 +29,7 @@ class SafeMLFlowLogger(MLFlowLogger):
 
 
 if __name__ == "__main__":
-    user_path = "/shared/home/i741961"
+    user_path = "/shared/home/xxx"
 
     task = Pretraining()
     train_datasets = [CornStack(task=task, split="train"), CodeSearchNet(task=task, split="train"), Stack(task=task, split="train")]
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         validation_dataset=validation_ds,
         test_dataset=test_ds,
         micro_batch_size=16,
-        global_batch_size=64,
+        global_batch_size=128,
         seq_length=task.max_seq_len,
         num_train_samples=train_ds.num_samples,
         num_val_samples=validation_ds.num_samples,
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     trainer = nl.Trainer(
         num_nodes=1,
-	    devices=4,
+	    devices=8,
         max_epochs=3,
         accelerator="gpu",
         strategy=nl.MegatronStrategy(
@@ -71,28 +71,30 @@ if __name__ == "__main__":
         plugins=nl.MegatronMixedPrecision(
             precision="bf16-mixed"
         ),
-	    log_every_n_steps=10,
-        val_check_interval=50,
-        limit_val_batches=1.0,
+	    log_every_n_steps=50,
+        val_check_interval=500,
+        limit_val_batches=0.5,
 	    accumulate_grad_batches=1,
     )
 
     log = nl.NeMoLogger(
         name="structure_aware_starcoder2",
-        log_dir=os.path.join(user_path, "log_dir"),
+        log_dir=os.path.join(user_path, "pretraining/log_dir"),
         ckpt=nl.ModelCheckpoint(
             save_last=True,
             monitor="val_loss",
             save_top_k=2,
-            every_n_train_steps=50,
             mode="min",
+            save_on_train_epoch_end=True,
+            save_optim_on_train_end=True,
             always_save_context=True,
+            save_context_on_train_end=True,
             filename="structure_aware_starcoder2-{val_loss:.2f}-{step}-{consumed_samples}",
         ),
         extra_loggers=[
             SafeMLFlowLogger(
                 experiment_name="structure_aware_starcoder2",
-                run_name="structure_aware_starcoder2_run",
+                run_name="pretraining",
                 tracking_uri="http://ec2-18-208-185-48.compute-1.amazonaws.com:5000",
             )
         ],
@@ -100,7 +102,7 @@ if __name__ == "__main__":
 
     resume = nl.AutoResume(
         restore_config=RestoreConfig(
-            path=os.path.join(user_path, 'local_checkpoint_path'),
+            path=os.path.join(user_path, 'load_model/structure_aware_starcoder2_3b_nemo_checkpoint'),
             load_model_state=True,
             load_optim_state=False,
             load_artifacts=False,
@@ -110,10 +112,15 @@ if __name__ == "__main__":
     optim = nl.MegatronOptimizerModule(
         config=OptimizerConfig(
             optimizer='adam',
-            lr=1e-3,
+            lr=4.5e-5,
             use_distributed_optimizer=True,
         ),
-        lr_scheduler=nl.lr_scheduler.CosineAnnealingScheduler()
+        lr_scheduler=nl.lr_scheduler.CosineAnnealingScheduler(
+            max_steps=(train_ds.num_samples * 3) // 128, # 3 epochs, global batch size 128
+            warmup_steps=1000,
+            constant_steps=10000,
+            min_lr=4.5e-6,
+        )
     )
 
     tokenizer = get_nmt_tokenizer(library='huggingface', model_name='bigcode/starcoder2-3b', use_fast=True)

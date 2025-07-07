@@ -159,7 +159,7 @@ class StructureAwareStarcoder2Config(Starcoder2Config3B):
 	def __post_init__(self):
 		super().__post_init__()
 
-		with open('../../data/metadata_pretraining/metadata.json', 'r') as f_metadata:
+		with open('/shared/home/xxx/gt_data/metadata_pretraining/metadata.json', 'r') as f_metadata:
 			metadata = json.load(f_metadata)
 
 		self.num_ast_node_types = metadata['num_ast_node_types']

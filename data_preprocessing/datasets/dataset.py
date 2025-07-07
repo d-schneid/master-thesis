@@ -10,7 +10,7 @@ from data_preprocessing.tasks.task import Task
 class Dataset(ABC):
 
 	def __init__(self, hf_dataset, dataset_save_dir, task: Task, lang='python', split='train'):
-		self.absolute_path = '/Users/i741961/Documents/SAP/Masterthesis/Code/master-thesis/data_preprocessing/data'
+		self.absolute_path = '/shared/home/xxx/gt_data'
 		self.save_dir = os.path.join(self.absolute_path, dataset_save_dir, task.task, split)
 		self.num_samples_path = os.path.join(self.save_dir, 'num_samples.json')
 		self.metadata_dir = os.path.join(self.absolute_path, 'metadata_pretraining')

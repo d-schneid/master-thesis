@@ -68,6 +68,12 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 
 		return output_tensor
 
+	def validation_step(self, batch, batch_idx=None) -> torch.Tensor:
+		batch_no_labels = {k: v for k, v in batch.items() if k != 'labels'}
+		logits = self.forward_step(batch_no_labels)
+
+		return super().validation_step(batch, batch_idx)
+
 
 @io.model_importer(StructureAwareStarcoder2Model, "hf")
 class HFStructureAwareStarcoder2Importer(io.ModelConnector["Starcoder2ForCausalLM", StructureAwareStarcoder2Model]):
