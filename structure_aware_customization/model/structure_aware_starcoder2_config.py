@@ -122,8 +122,10 @@ def structure_aware_gpt_forward_step(model, batch) -> torch.Tensor:
 		"ast_node_heights": batch["ast_node_heights"],
 		"dfg_node_mask": batch["dfg_node_mask"],
 		"attention_bias": batch["attention_bias"],
-		"labels": batch["labels"],
 	}
+
+	if "labels" in batch:
+		forward_args["labels"] = batch["labels"]
 
 	if 'text_token_ids' in batch:
 		forward_args["text_token_ids"] = batch["text_token_ids"]
