@@ -32,9 +32,9 @@ if __name__ == "__main__":
     user_path = "/shared/home/xxx"
 
     task = Pretraining()
-    train_datasets = [CornStack(task=task, split="train"), CodeSearchNet(task=task, split="train"), Stack(task=task, split="train")]
-    validation_datasets = [CornStack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), Stack(task=task, split="validation")]
-    test_datasets = [CornStack(task=task, split="test"), CodeSearchNet(task=task, split="test"), Stack(task=task, split="test")]
+    train_datasets = [Stack(task=task, split="train"), CodeSearchNet(task=task, split="train"), CornStack(task=task, split="train")]
+    validation_datasets = [Stack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), CornStack(task=task, split="validation")]
+    test_datasets = [Stack(task=task, split="test"), CodeSearchNet(task=task, split="test"), CornStack(task=task, split="test")]
     train_ds = StructureAwarePretrainingDataset(datasets=train_datasets)
     validation_ds = StructureAwarePretrainingDataset(datasets=validation_datasets)
     test_ds = StructureAwarePretrainingDataset(datasets=test_datasets)
@@ -85,7 +85,6 @@ if __name__ == "__main__":
             monitor="val_loss",
             save_top_k=2,
             mode="min",
-            save_on_train_epoch_end=True,
             save_optim_on_train_end=True,
             always_save_context=True,
             save_context_on_train_end=True,
