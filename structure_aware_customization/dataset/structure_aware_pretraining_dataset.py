@@ -10,16 +10,16 @@ class StructureAwarePretrainingDataset(StructureAwareDataset):
 		super().__init__(datasets=datasets)
 
 	def __getitem__(self, idx):
-		batch = super().__getitem__(idx)
+		sample = super().__getitem__(idx)
 
-		code_tokens = batch['code_token_ids']
+		code_tokens = sample['code_token_ids']
 		labels = torch.cat([code_tokens[1:], torch.tensor([self.padding_value], dtype=code_tokens.dtype)])
 		loss_mask = torch.cat([torch.ones(len(code_tokens[:-1]), dtype=code_tokens.dtype), torch.tensor([0], dtype=code_tokens.dtype)])
 
-		batch['labels'] = labels
-		batch['loss_mask'] = loss_mask
+		sample['labels'] = labels
+		sample['loss_mask'] = loss_mask
 
-		return batch
+		return sample
 
 	def get_2d_tokens_for_max_seq_len_padding(self):
 		return ['attn_code_tokens', 'attn_code_ast', 'attn_code_dfg', 'code_token_rel_pos_ids']
