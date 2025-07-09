@@ -6,7 +6,7 @@ import torch
 
 class NonStructAwarePretrainingDataset(StructureAwareDataset):
 
-	def __init__(selfself, datasets: list[Dataset]) -> None:
+	def __init__(self, datasets: list[Dataset]) -> None:
 		super().__init__(datasets=datasets)
 
 	def __getitem__(self, idx):

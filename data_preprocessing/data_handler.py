@@ -280,7 +280,8 @@ class DataHandler:
 	def compute_relative_distances(self, pos_ids, max_distance=127):
 		# account for padding distance id of 0 that is added when padded in collating a batch
 		# thus, 0 should not be assigned as a relative distance
-		dist_matrix = np.abs(pos_ids[:, None] - pos_ids[None, :]) + 1
+		pos_ids_signed = pos_ids.astype(np.int16)
+		dist_matrix = np.abs(pos_ids_signed[:, None] - pos_ids_signed[None, :]) + 1
 		dist_matrix = np.minimum(dist_matrix, max_distance)
 
 		return dist_matrix.astype(np.uint8)
