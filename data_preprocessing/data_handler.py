@@ -258,6 +258,7 @@ class DataHandler:
 		data = self.task.filter_max_seq_len(data)
 		if data.empty:
 			return updated_node_type_to_idx, 0, max_ast_depth, data
+		data = self.task.truncate_ast_dfg(data)
 		data = self.task.compute_attention_masks(data)
 		data = data.drop(columns=['dfg_edges', 'ast_leaf_code_token_idxs'])
 		data['code_tokens_rel_pos_ids'] = Parallel(n_jobs=NUM_CPUS)(

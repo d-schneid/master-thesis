@@ -5,8 +5,8 @@ import numpy as np
 
 class Pretraining(Task):
 
-	def __init__(self):
-		super().__init__(task='pretraining')
+	def __init__(self, task='pretraining'):
+		super().__init__(task=task)
 
 	def get_cols(self):
 		return [

@@ -87,3 +87,6 @@ class Task(ABC):
 		mask = mask + np.tril(np.zeros((row_len, row_len), dtype=np.float32))
 
 		return mask
+
+	def truncate_ast_dfg(self, data):
+		return data
