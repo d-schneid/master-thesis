@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from torch import nn
 
+from data_preprocessing.tasks.task import Task
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 
 from nemo.collections.llm import Starcoder2Model, Starcoder2Config
@@ -26,8 +27,10 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 			optim: Optional[OptimizerModule] = None,
 			tokenizer: Optional["TokenizerSpec"] = None,
 			model_transform: Optional[Callable[[nn.Module], nn.Module]] = None,
+			task: Task = None
 	):
 		super().__init__(config=config, optim=optim, tokenizer=tokenizer, model_transform=model_transform)
+		self.task = task
 
 	def forward(
 			self,
@@ -70,7 +73,12 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 
 	def validation_step(self, batch, batch_idx=None) -> torch.Tensor:
 		batch_no_labels = {k: v for k, v in batch.items() if k != 'labels'}
-		logits = self.forward_step(batch_no_labels)
+
+		pred_tok_id = -1
+		# check for EOS token and max sequence length
+		while pred_tok_id != 0 and batch_no_labels['loss_mask'][0, -1] == 0:
+			logits = self.forward_step(batch_no_labels)
+			batch_no_labels, pred_tok_id = self.task.decode(logits, batch_no_labels)
 
 		return super().validation_step(batch, batch_idx)
 

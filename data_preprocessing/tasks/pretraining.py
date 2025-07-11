@@ -8,6 +8,9 @@ class Pretraining(Task):
 	def __init__(self, task='pretraining'):
 		super().__init__(task=task)
 
+	def decode(self, logits, batch_no_labels):
+		pass
+
 	def get_cols(self):
 		return [
 			'attn_code_tokens',

@@ -12,6 +12,10 @@ class Task(ABC):
 		self.max_seq_len = 1024
 
 	@abstractmethod
+	def decode(self, logits, batch_no_labels):
+		pass
+
+	@abstractmethod
 	def compute_attention_masks(self, data):
 		pass
 

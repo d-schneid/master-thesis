@@ -2,6 +2,7 @@ import os
 from typing import Mapping, Optional
 
 from data_preprocessing.tasks.pretraining import Pretraining
+from data_preprocessing.tasks.code_completion import CodeCompletion
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
 from data_preprocessing.datasets.cornstack import CornStack
 from data_preprocessing.datasets.stack import Stack
@@ -31,7 +32,7 @@ class SafeMLFlowLogger(MLFlowLogger):
 if __name__ == "__main__":
     user_path = "/shared/home/xxx"
 
-    task = Pretraining()
+    task = CodeCompletion()
     train_datasets = [Stack(task=task, split="train"), CodeSearchNet(task=task, split="train"), CornStack(task=task, split="train")]
     validation_datasets = [Stack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), CornStack(task=task, split="validation")]
     test_datasets = [Stack(task=task, split="test"), CodeSearchNet(task=task, split="test"), CornStack(task=task, split="test")]
@@ -52,7 +53,8 @@ if __name__ == "__main__":
     )
 
     model = StructureAwareStarcoder2Model(
-        config=StructureAwareStarcoder2Config()
+        config=StructureAwareStarcoder2Config(),
+        task=task,
     )
 
     trainer = nl.Trainer(
