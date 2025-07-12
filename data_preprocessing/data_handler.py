@@ -193,7 +193,7 @@ class DataHandler:
 			node_type_to_idx['<NOT_SEEN>'] = max_node_idx
 
 		for node_type in all_node_types:
-			if self.dataset.split != 'train':
+			if self.dataset.split != 'train' or self.dataset.task.task != 'pretraining':
 				if node_type not in node_type_to_idx:
 					node_type_to_idx[node_type] = node_type_to_idx['<NOT_SEEN>']
 			elif node_type not in node_type_to_idx:
@@ -247,7 +247,7 @@ class DataHandler:
 		os.makedirs(self.save_dir, exist_ok=True)
 
 		updated_node_type_to_idx, max_ast_depth = self.add_ast_lr_paths_and_ll_sim(data, node_type_to_idx)
-		if self.dataset.split != 'train':
+		if self.dataset.split != 'train' or self.dataset.task.task != 'pretraining':
 			with open(self.dataset.metadata_path, 'r') as f:
 				metadata_train = json.load(f)
 			max_ast_depth = metadata_train['max_ast_depth']

@@ -10,6 +10,16 @@ class CodeCompletion(Pretraining):
 	def __init__(self):
 		super().__init__(task='code_completion')
 
+	def get_cols(self):
+		return super().get_cols() + ['start_completion_idx']
+
+	def _generate_sample(self, row):
+		update = {
+			"start_completion_idx": row["start_completion_idx"],
+		}
+
+		return update
+
 	def decode_next_token(self, logits, batch_no_labels):
 		loss_mask = batch_no_labels["loss_mask"].squeeze(0)
 		idxs = (loss_mask == 1).nonzero(as_tuple=True)[0]
@@ -65,9 +75,9 @@ class CodeCompletion(Pretraining):
 	def truncate_dfg_edges(self, dfg_truncate_idx, edges):
 		truncated_dfg_edges = []
 		for to_node, from_nodes in edges:
-			if to_node >= dfg_truncate_idx:
+			if to_node > dfg_truncate_idx:
 				continue
-			updated_from_nodes = [from_node for from_node in from_nodes if from_node < dfg_truncate_idx]
+			updated_from_nodes = [from_node for from_node in from_nodes if from_node <= dfg_truncate_idx]
 			if updated_from_nodes:
 				truncated_dfg_edges.append((to_node, updated_from_nodes))
 
@@ -90,7 +100,7 @@ class CodeCompletion(Pretraining):
 
 	def truncate_sample(self, row):
 		code_len = len(row['code_tokens'])
-		lambda_ = code_len * 0.5
+		lambda_ = code_len * 0.5 * np.random.uniform(0.8, 1.2)
 		truncate_idx = self.bounded_poisson(lambda_, 2, code_len - 2)
 
 		truncated_ast_leaf_code_token_idxs, ast_truncate_idx = self.truncate_ast_dfg_code_idxs_mapping(truncate_idx, row["ast_leaf_code_token_idxs"])
@@ -118,11 +128,14 @@ class CodeCompletion(Pretraining):
 			"lr_paths_len": truncated_lr_paths_len,
 			"dfg_node_code_token_idxs": truncated_dfg_node_code_token_idxs,
 			"dfg_edges": truncated_dfg_edges,
-			"dfg_node_mask": truncated_dfg_node_mask
+			"dfg_node_mask": truncated_dfg_node_mask,
+			"start_completion_idx": np.array([truncate_idx], dtype=np.uint16)
 		})
 
 	def truncate_ast_dfg(self, data):
-		data[["ast_leaf_code_token_idxs", "ll_sims", "lr_paths_types", "lr_paths_len", "dfg_node_code_token_idxs",
-			  "dfg_edges", "dfg_node_mask"]] = data.apply(self.truncate_sample, axis=1)
+		data[[
+			"ast_leaf_code_token_idxs", "ll_sims", "lr_paths_types", "lr_paths_len", "dfg_node_code_token_idxs",
+			"dfg_edges", "dfg_node_mask", "start_completion_idx"
+		]] = data.apply(self.truncate_sample, axis=1)
 
 		return data
