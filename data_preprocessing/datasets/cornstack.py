@@ -10,8 +10,7 @@ from data_preprocessing.datasets.dataset import Dataset
 class CornStack(Dataset):
 
 	def __init__(self, task: Task, split='train'):
-		dataset_save_dir = 'cornstack'
-		super().__init__(hf_dataset='nomic-ai/cornstack-python-v1', dataset_save_dir=dataset_save_dir, task=task, split=split)
+		super().__init__(hf_dataset='nomic-ai/cornstack-python-v1', dataset_save_dir='cornstack', task=task, split=split)
 		self.h5_path_0 = os.path.join(self.save_dir, 'samples_0.h5')
 		self.h5_path_1 = os.path.join(self.save_dir, 'samples_1.h5')
 		self.h5_path_2 = os.path.join(self.save_dir, 'samples_2.h5')
