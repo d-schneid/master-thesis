@@ -8,6 +8,9 @@ class CodeText(Task):
 	def __init__(self):
 		super().__init__(task='code_text')
 
+	def decode(self, logits, batch_no_labels):
+		pass
+
 	def get_cols(self):
 		return [
 			'text_tokens',
@@ -54,7 +57,7 @@ class CodeText(Task):
 
 		return adj_matrix
 
-	def full_attention(self, row, row_len):
+	def no_attention(self, row, row_len):
 		col_len = len(row['text_tokens'])
 
 		return np.full((row_len, col_len), self.attn_bias_ignore, dtype=np.float32)
@@ -90,7 +93,7 @@ class CodeText(Task):
 		)
 
 		data['attn_code_text'] = data.apply(
-			lambda row: self.full_attention(
+			lambda row: self.no_attention(
 				row=row,
 				row_len=len(row['code_tokens'])
 			),
@@ -98,7 +101,7 @@ class CodeText(Task):
 		)
 
 		data['attn_ast_text'] = data.apply(
-			lambda row: self.full_attention(
+			lambda row: self.no_attention(
 				row=row,
 				row_len=len(row['lr_paths_len'])
 			),
@@ -106,7 +109,7 @@ class CodeText(Task):
 		)
 
 		data['attn_dfg_text'] = data.apply(
-			lambda row: self.full_attention(
+			lambda row: self.no_attention(
 				row=row,
 				row_len=len(row['dfg_node_mask'])
 			),

@@ -11,7 +11,7 @@ import h5py
 
 if __name__ == '__main__':
 	task = CodeText()
-	dataset = CodeSearchNet(task=task, split="train")
+	dataset = CodeSearchNet(task=task, split="test")
 	data = dataset.load_dataset()
 	data_handler = DataHandler(dataset=dataset, task=task)
 
