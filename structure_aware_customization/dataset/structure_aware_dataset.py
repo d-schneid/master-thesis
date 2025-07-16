@@ -43,10 +43,15 @@ class StructureAwareDataset(ABC, Dataset):
 			np.float32: torch.bfloat16,
 		}
 
+		rng = np.random.default_rng(seed=42)
+		self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
+
 	def __len__(self) -> int:
 		return self.num_samples
 
 	def __getitem__(self, idx):
+		idx = self.shuffled_indices[idx]
+
 		for file_idx, start_idx, end_idx in self.sample_idx_ranges:
 			if start_idx <= idx < end_idx:
 				file_sample_idx = idx - start_idx
@@ -87,9 +92,11 @@ class StructureAwareDataset(ABC, Dataset):
 
 	@abstractmethod
 	def get_2d_tokens_for_max_seq_len_padding(self):
+		# Only pad last type of tokens in sequence, such that total sequence length is max_seq_len
 		pass
 
 	def get_1d_tokens_for_max_seq_len_padding(self):
+		# Only pad last type of tokens in sequence, such that total sequence length is max_seq_len
 		return ['labels', 'loss_mask']
 
 	def pad_batch_to_max_seq_len(self, batch_dict):

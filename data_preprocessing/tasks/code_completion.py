@@ -139,3 +139,30 @@ class CodeCompletion(Pretraining):
 		]] = data.apply(self.truncate_sample, axis=1)
 
 		return data
+
+	def generate_adj_matrix(self, edges, num_nodes):
+		adj_matrix = np.full((num_nodes, num_nodes), self.attn_bias_ignore, dtype=np.float32)
+
+		for to_node, from_nodes in edges:
+			for from_node in from_nodes:
+				adj_matrix[to_node, from_node] = self.attn_bias_attend
+
+		return adj_matrix
+
+	def update_attention_masks(self, row):
+		start_completion_idx = int(row["start_completion_idx"][0])
+		attn_code_tokens = row["attn_code_tokens"].copy()
+		attn_code_tokens[:start_completion_idx + 1, :start_completion_idx + 1] = self.attn_bias_attend
+
+		attn_ast_leaves = np.zeros_like(row["attn_ast_leaves"])
+
+		row["attn_code_tokens"] = attn_code_tokens
+		row["attn_ast_leaves"] = attn_ast_leaves
+
+		return row
+
+	def compute_attention_masks(self, data):
+		# AST, DFG, and code tokens are already truncated, so truncated attention masks will be computed here
+		data = super().compute_attention_masks(data)
+
+		return data.apply(self.update_attention_masks, axis=1)

@@ -45,4 +45,5 @@ class CornStack(Dataset):
 		return 'query', 'document'
 
 	def load_dataset(self):
-		return load_dataset(self.hf_dataset, split="train", streaming=True)
+		data_files = [f"shard-{i:05d}.jsonl.gz" for i in range(101, 111)]
+		return load_dataset(self.hf_dataset, split="train", data_files=data_files)
