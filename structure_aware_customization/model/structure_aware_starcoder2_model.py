@@ -72,13 +72,21 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 		return output_tensor
 
 	def validation_step(self, batch, batch_idx=None) -> torch.Tensor:
-		batch_no_labels = {k: v for k, v in batch.items() if k != 'labels'}
+		start_gt_idx = batch["loss_mask"].squeeze(0).nonzero(as_tuple=True)[0].item()
+		end_gt_idx = (batch["labels"].squeeze(0) != 0).nonzero(as_tuple=True)[0][-1].item() + 1  # include EOS token
+		gt_tok_ids = batch["labels"][0, start_gt_idx : end_gt_idx + 1]
 
+		batch_no_labels = {k: v for k, v in batch.items() if k != 'labels'}
 		pred_tok_id = -1
+		pred_tok_ids = []
 		# check for EOS token and max sequence length
 		while pred_tok_id != 0 and batch_no_labels['loss_mask'][0, -1] == 0:
 			logits = self.forward_step(batch_no_labels)
-			batch_no_labels, pred_tok_id = self.task.decode(logits, batch_no_labels)
+			batch_no_labels, pred_tok_id = self.task.decode(logits, batch_no_labels, batch)
+			pred_tok_ids.append(pred_tok_id)
+
+		gt_code = self.tokenizer.ids_to_text(gt_tok_ids.tolist(), remove_special_tokens=False)
+		pred_code = self.tokenizer.ids_to_text(pred_tok_ids, remove_special_tokens=False)
 
 		return super().validation_step(batch, batch_idx)
 

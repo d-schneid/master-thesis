@@ -1,12 +1,12 @@
 import os
 
-from data_preprocessing.tasks.pretraining import Pretraining
+from data_preprocessing.tasks.code_completion import CodeCompletion
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
 from data_preprocessing.datasets.cornstack import CornStack
 from data_preprocessing.datasets.stack import Stack
 from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
-from structure_aware_customization.dataset.structure_aware_pretraining_dataset import StructureAwarePretrainingDataset
+from structure_aware_customization.dataset.eval.structure_aware_eval_cc_dataset import StructureAwareEvalCCDataset
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
 
 from megatron.core.optimizer import OptimizerConfig
@@ -20,13 +20,13 @@ from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 if __name__ == "__main__":
     user_path = "/shared/home/xxx"
 
-    task = Pretraining()
+    task = CodeCompletion()
     train_datasets = [Stack(task=task, split="train"), CodeSearchNet(task=task, split="train"), CornStack(task=task, split="train")]
     validation_datasets = [Stack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), CornStack(task=task, split="validation")]
     test_datasets = [Stack(task=task, split="test"), CodeSearchNet(task=task, split="test"), CornStack(task=task, split="test")]
-    train_ds = StructureAwarePretrainingDataset(datasets=train_datasets)
-    validation_ds = StructureAwarePretrainingDataset(datasets=validation_datasets)
-    test_ds = StructureAwarePretrainingDataset(datasets=test_datasets)
+    train_ds = StructureAwareEvalCCDataset(datasets=train_datasets)
+    validation_ds = StructureAwareEvalCCDataset(datasets=validation_datasets)
+    test_ds = StructureAwareEvalCCDataset(datasets=test_datasets)
 
     data = StructureAwareDataModule(
         train_dataset=train_ds,
@@ -41,7 +41,8 @@ if __name__ == "__main__":
     )
 
     model = StructureAwareStarcoder2Model(
-        config=StructureAwareStarcoder2Config()
+        config=StructureAwareStarcoder2Config(),
+        task=task,
     )
 
     trainer = nl.Trainer(

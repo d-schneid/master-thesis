@@ -20,49 +20,54 @@ class CodeCompletion(Pretraining):
 
 		return update
 
-	def decode_next_token(self, logits, batch_no_labels):
-		loss_mask = batch_no_labels["loss_mask"].squeeze(0)
-		idxs = (loss_mask == 1).nonzero(as_tuple=True)[0]
-		next_tok_pred_idx = idxs[-1].item()
-		batch_no_labels["loss_mask"][0, next_tok_pred_idx + 1] = 1  # update loss mask for next iteration
-
+	def _decode_next_token(self, logits, batch_no_labels):
+		next_tok_pred_idx = batch_no_labels["loss_mask"].squeeze(0).nonzero(as_tuple=True)[0].item() # only one 1 in loss mask
 		pred_tok_id = logits[0, next_tok_pred_idx].argmax()
+		next_tok_idx = next_tok_pred_idx + 1
 
-		code_tokens = batch_no_labels["code_token_ids"].squeeze(0)
-		code_idxs = (code_tokens != 0).nonzero(as_tuple=True)[0]
-		next_code_tok_idx = code_idxs[-1].item() + 1
-		batch_no_labels["code_token_ids"][0, next_code_tok_idx] = pred_tok_id
+		# update code tokens and loss mask for next iteration
+		update_code_tok_idx = self.max_seq_len - next_tok_pred_idx
+		batch_no_labels["code_token_ids"][0, -(update_code_tok_idx - 1)] = pred_tok_id
+		updated_code_tok_idx = batch_no_labels["code_token_ids"].size(1) - (update_code_tok_idx - 1)
 
-		return pred_tok_id, next_code_tok_idx
+		batch_no_labels["loss_mask"].zero_()
+		batch_no_labels["loss_mask"][0, next_tok_pred_idx + 1] = 1
 
-	def update_rel_pos_ids(self, batch_no_labels, next_code_tok_idx):
-		adj_next_code_tok_idx = next_code_tok_idx + 1  # adjust for zero-pad token for rel pos
+		return pred_tok_id, updated_code_tok_idx, next_tok_idx
+
+	def _update_rel_pos_ids(self, batch_no_labels, updated_code_tok_idx):
+		max_rel_pos_updated_code_tok = updated_code_tok_idx + 1  # adjust for zero-pad token for rel pos
 		max_rel_pos = 127
-		if adj_next_code_tok_idx > max_rel_pos:
+		if max_rel_pos_updated_code_tok > max_rel_pos:
 			clipped = torch.arange(max_rel_pos, 0, -1, device=batch_no_labels["code_token_rel_pos_ids"].device)
-			pad_len = adj_next_code_tok_idx - max_rel_pos
+			pad_len = max_rel_pos_updated_code_tok - max_rel_pos
 			padding = torch.full((pad_len,), max_rel_pos, device=batch_no_labels["code_token_rel_pos_ids"].device)
 			updated_code_tok_rel_pos_ids = torch.cat([padding, clipped])
 		else:
-			updated_code_tok_rel_pos_ids = torch.arange(adj_next_code_tok_idx, 0, -1, device=batch_no_labels["code_token_rel_pos_ids"].device)
+			updated_code_tok_rel_pos_ids = torch.arange(max_rel_pos_updated_code_tok, 0, -1, device=batch_no_labels["code_token_rel_pos_ids"].device)
 
-		batch_no_labels["code_token_rel_pos_ids"][0, :adj_next_code_tok_idx, next_code_tok_idx] = updated_code_tok_rel_pos_ids
-		batch_no_labels["code_token_rel_pos_ids"][0, next_code_tok_idx, :adj_next_code_tok_idx] = updated_code_tok_rel_pos_ids
+		batch_no_labels["code_token_rel_pos_ids"][0, :max_rel_pos_updated_code_tok, updated_code_tok_idx] = updated_code_tok_rel_pos_ids
+		batch_no_labels["code_token_rel_pos_ids"][0, updated_code_tok_idx, :max_rel_pos_updated_code_tok] = updated_code_tok_rel_pos_ids
 
-	def update_attention_bias(self, batch_no_labels, next_code_tok_idx):
+	def _update_attention_bias(self, batch_no_labels, next_tok_idx):
 		num_code_tokens = batch_no_labels["code_token_ids"].shape[1]
 		attention_bias = batch_no_labels["attention_bias"]
-		start_idx = attention_bias.shape[-1] - num_code_tokens
-		abs_row_idx = start_idx + next_code_tok_idx
+		attn_code_start_idx = attention_bias.shape[-1] - num_code_tokens
 
-		attention_bias[0, 0, abs_row_idx, start_idx:abs_row_idx + 1] = self.attn_bias_attend
-		attention_bias[0, 0, abs_row_idx, abs_row_idx + 1:start_idx + num_code_tokens] = self.attn_bias_ignore
-		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] > -1] = self.attn_bias_attend  # reset attention bias
+		# only attend to previous code tokens and not AST/DFG tokens
+		attention_bias[0, 0, next_tok_idx, attn_code_start_idx:next_tok_idx + 1] = self.attn_bias_attend
+		attention_bias[0, 0, next_tok_idx, next_tok_idx + 1:attn_code_start_idx + num_code_tokens] = self.attn_bias_ignore
 
-	def decode(self, logits, batch_no_labels):
-		pred_tok_id, next_code_tok_idx = self.decode_next_token(logits, batch_no_labels)
-		self.update_rel_pos_ids(batch_no_labels, next_code_tok_idx)
-		self.update_attention_bias(batch_no_labels, next_code_tok_idx)
+	def _reset_floats(self, batch_no_labels, batch):
+		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] > -1] = self.attn_bias_attend
+		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] <= -1] = self.attn_bias_ignore
+		batch_no_labels["ll_sims"] = batch["ll_sims"].clone()
+
+	def decode(self, logits, batch_no_labels, batch):
+		pred_tok_id, updated_code_tok_idx, next_tok_idx = self._decode_next_token(logits, batch_no_labels)
+		self._update_rel_pos_ids(batch_no_labels, updated_code_tok_idx)
+		self._update_attention_bias(batch_no_labels, next_tok_idx)
+		self._reset_floats(batch_no_labels, batch)
 
 		return batch_no_labels, pred_tok_id
 

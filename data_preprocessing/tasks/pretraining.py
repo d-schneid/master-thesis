@@ -8,7 +8,7 @@ class Pretraining(Task):
 	def __init__(self, task='pretraining'):
 		super().__init__(task=task)
 
-	def decode(self, logits, batch_no_labels):
+	def decode(self, logits, batch_no_labels, batch):
 		pass
 
 	def get_cols(self):
