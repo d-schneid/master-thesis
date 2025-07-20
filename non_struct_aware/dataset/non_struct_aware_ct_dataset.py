@@ -4,7 +4,7 @@ from data_preprocessing.datasets.dataset import Dataset
 import torch
 
 
-class NonStructureAwareCTDataset(StructureAwareDataset):
+class NonStructAwareCTDataset(StructureAwareDataset):
 
 	def __init__(self, datasets: list[Dataset]) -> None:
 		super().__init__(datasets=datasets)
