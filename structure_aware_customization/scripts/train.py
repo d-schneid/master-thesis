@@ -1,15 +1,12 @@
 import os
 from typing import Mapping, Optional
 
-from data_preprocessing.tasks.pretraining import Pretraining
-from data_preprocessing.tasks.code_completion import CodeCompletion
-from data_preprocessing.datasets.code_search_net import CodeSearchNet
+from data_preprocessing.tasks.code_text import CodeText
 from data_preprocessing.datasets.cornstack import CornStack
-from data_preprocessing.datasets.stack import Stack
 from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
 from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
-from structure_aware_customization.dataset.structure_aware_pretraining_dataset import StructureAwarePretrainingDataset
+from structure_aware_customization.dataset.structure_aware_ct_dataset import StructureAwareCTDataset
 
 from megatron.core.optimizer import OptimizerConfig
 
@@ -32,20 +29,23 @@ class SafeMLFlowLogger(MLFlowLogger):
 if __name__ == "__main__":
     user_path = "/shared/home/xxx"
 
-    task = CodeCompletion()
-    train_datasets = [Stack(task=task, split="train"), CodeSearchNet(task=task, split="train"), CornStack(task=task, split="train")]
-    validation_datasets = [Stack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), CornStack(task=task, split="validation")]
-    test_datasets = [Stack(task=task, split="test"), CodeSearchNet(task=task, split="test"), CornStack(task=task, split="test")]
-    train_ds = StructureAwarePretrainingDataset(datasets=train_datasets)
-    validation_ds = StructureAwarePretrainingDataset(datasets=validation_datasets)
-    test_ds = StructureAwarePretrainingDataset(datasets=test_datasets)
+    task = CodeText()
+    train_datasets = [CornStack(task=task, split="train")]
+    validation_datasets = [CornStack(task=task, split="validation")]
+    test_datasets = [CornStack(task=task, split="test")]
+    train_ds = StructureAwareCTDataset(datasets=train_datasets)
+    validation_ds = StructureAwareCTDataset(datasets=validation_datasets)
+    test_ds = StructureAwareCTDataset(datasets=test_datasets)
+
+    global_batch_size = 128
+    num_epochs = 3
 
     data = StructureAwareDataModule(
         train_dataset=train_ds,
         validation_dataset=validation_ds,
         test_dataset=test_ds,
         micro_batch_size=16,
-        global_batch_size=128,
+        global_batch_size=global_batch_size,
         seq_length=task.max_seq_len,
         num_train_samples=train_ds.num_samples,
         num_val_samples=validation_ds.num_samples,
@@ -54,13 +54,13 @@ if __name__ == "__main__":
 
     model = StructureAwareStarcoder2Model(
         config=StructureAwareStarcoder2Config(),
-        task=task,
     )
 
     trainer = nl.Trainer(
         num_nodes=1,
 	    devices=8,
-        max_epochs=3,
+        max_epochs=num_epochs,
+        max_steps=(train_ds.num_samples * num_epochs) // global_batch_size,
         accelerator="gpu",
         strategy=nl.MegatronStrategy(
             tensor_model_parallel_size=2,
@@ -75,13 +75,13 @@ if __name__ == "__main__":
         ),
 	    log_every_n_steps=50,
         val_check_interval=500,
-        limit_val_batches=0.5,
+        limit_val_batches=0.6,
 	    accumulate_grad_batches=1,
     )
 
     log = nl.NeMoLogger(
-        name="structure_aware_starcoder2",
-        log_dir=os.path.join(user_path, "pretraining/log_dir"),
+        name="structure_aware_starcoder2_finetuning_cc",
+        log_dir=os.path.join(user_path, "finetuning/code_completion/log_dir"),
         ckpt=nl.ModelCheckpoint(
             save_last=True,
             monitor="val_loss",
@@ -94,33 +94,40 @@ if __name__ == "__main__":
         ),
         extra_loggers=[
             SafeMLFlowLogger(
-                experiment_name="structure_aware_starcoder2",
-                run_name="pretraining",
+                experiment_name="structure_aware_starcoder2_finetuning_cc",
+                run_name="finetuning_cc",
                 tracking_uri="http://ec2-18-208-185-48.compute-1.amazonaws.com:5000",
             )
         ],
     )
 
-    resume = nl.AutoResume(
+    resume_from_pretraining = nl.AutoResume(
         restore_config=RestoreConfig(
-            path=os.path.join(user_path, 'load_model/structure_aware_starcoder2_3b_nemo_checkpoint'),
+            path=os.path.join(user_path, 'pretraining_path'),
             load_model_state=True,
             load_optim_state=False,
             load_artifacts=False,
         ),
     )
 
+    resume_from_ckpt = nl.AutoResume(
+        resume_from_path=os.path.join(user_path, 'ckpt_path'),
+        resume_if_exists=True,
+        resume_past_end=False,
+        resume_ignore_no_checkpoint=False,
+    )
+
     optim = nl.MegatronOptimizerModule(
         config=OptimizerConfig(
             optimizer='adam',
-            lr=4.5e-5,
+            lr=3e-5,
             use_distributed_optimizer=True,
         ),
         lr_scheduler=nl.lr_scheduler.CosineAnnealingScheduler(
-            max_steps=(train_ds.num_samples * 3) // 128, # 3 epochs, global batch size 128
-            warmup_steps=1000,
-            constant_steps=10000,
-            min_lr=4.5e-6,
+            max_steps=(train_ds.num_samples * num_epochs) // global_batch_size,
+            warmup_steps=1500,
+            constant_steps=5000,
+            min_lr=3e-6,
         )
     )
 
@@ -131,7 +138,7 @@ if __name__ == "__main__":
         data=data,
         trainer=trainer,
         log=log,
-        resume=resume,
+        resume=resume_from_pretraining,
         optim=optim,
         tokenizer=tokenizer
     )

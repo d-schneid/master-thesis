@@ -8,7 +8,7 @@ class CodeText(Task):
 	def __init__(self):
 		super().__init__(task='code_text')
 
-	def decode(self, logits, batch_no_labels):
+	def decode(self, logits, batch_no_labels, batch):
 		pass
 
 	def get_cols(self):
@@ -25,6 +25,20 @@ class CodeText(Task):
 			'attn_ast_text',
 			'attn_dfg_text',
 		]
+
+	def filter_max_seq_len(self, data):
+		data_filtered = data[
+			(data['code_tokens'].apply(len) <= 450) &
+			(data['lr_paths_len'].apply(len) <= 300) &
+			(data['text_tokens'].apply(len) <= 200) &
+			(data['dfg_node_mask'].apply(len) <= 100)
+			].reset_index(drop=True)
+
+		cols = self.get_max_seq_len_cols()
+		length_sums = data_filtered.apply(lambda row: sum(len(row[col]) for col in cols), axis=1)
+		data_filtered = data_filtered[length_sums < self.max_seq_len].reset_index(drop=True)
+
+		return data_filtered
 
 	def get_max_seq_len_cols(self):
 		return super().get_max_seq_len_cols() + ['text_tokens']

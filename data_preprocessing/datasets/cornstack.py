@@ -45,5 +45,10 @@ class CornStack(Dataset):
 		return 'query', 'document'
 
 	def load_dataset(self):
-		data_files = [f"shard-{i:05d}.jsonl.gz" for i in range(101, 111)]
-		return load_dataset(self.hf_dataset, split="train", data_files=data_files)
+		#data_files = [f"shard-{i:05d}.jsonl.gz" for i in range(101, 111)]
+		#data_files = data_files + [f"shard-{i:05d}.jsonl.gz" for i in range(201, 211)]
+
+		data_files = [f"shard-{i:05d}.jsonl.gz" for i in range(151, 161)]
+		data_files = data_files + [f"shard-{i:05d}.jsonl.gz" for i in range(181, 191)]
+
+		return load_dataset(self.hf_dataset, split="train", data_files=data_files).shuffle(seed=47)

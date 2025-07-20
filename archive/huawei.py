@@ -57,10 +57,10 @@ class Huawei(Dataset):
 		return sample
 
 	def load_dataset(self):
-		num_train_samples = 2_100_000
+		num_train_samples = 1_200_000
 		num_test_samples = 80_000
 		num_valid_samples = 80_000
-		dataset = load_dataset(self.hf_dataset, split="train").select(range(num_train_samples + num_test_samples, num_train_samples + num_test_samples + num_valid_samples)).filter(lambda x: not x['code'].lstrip().startswith("@"))
+		dataset = load_dataset(self.hf_dataset, split="train").select(range(num_train_samples)).filter(lambda x: not x['code'].lstrip().startswith("@"))
 		converted_dataset = [self.convert_code_string(sample) for sample in dataset]
 
 		return HFDataset.from_list(converted_dataset)

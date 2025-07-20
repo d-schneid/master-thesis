@@ -11,9 +11,10 @@ import h5py
 
 if __name__ == '__main__':
 	task = CodeText()
-	dataset = CornStack(task=task, split="train")
+	dataset = CornStack(task=task, split="validation")
 	num_train_samples = 1_200_000
-	data = dataset.load_dataset().select(range(num_train_samples))
+	num_val_samples = 80_000
+	data = dataset.load_dataset().select(range(num_train_samples, num_train_samples + num_val_samples))
 	data_handler = DataHandler(dataset=dataset, task=task)
 
 	num_processed_samples_split = [0]

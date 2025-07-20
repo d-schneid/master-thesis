@@ -120,7 +120,7 @@ class StructureAwareDataset(ABC, Dataset):
 					padding_value = self.padding_value
 				batch_dict[key] = torch.stack(pad_2d_tensors(batch_dict[key], padding_value=padding_value,
 															 max_rows=max_rows, max_cols=max_cols))
-			elif key in ['attn_code_ast', 'attn_code_dfg']:
+			elif key in ['attn_code_ast', 'attn_code_ast_all', 'attn_code_dfg', 'attn_code_dfg_all']:
 				keep_num_cols = batch_dict[key].shape[2]
 				batch_dict[key] = torch.stack(pad_2d_tensors(batch_dict[key], padding_value=padding_value,
 															 max_rows=max_rows, max_cols=keep_num_cols))

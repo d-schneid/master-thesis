@@ -80,6 +80,5 @@ class StructureAwareDataModule(MockDataModule):
 			pin_memory=self.pin_memory,
 			persistent_workers=self.persistent_workers,
 			collate_fn=dataset.collate_fn,
-			shuffle=True,
 			**kwargs,
 		)
