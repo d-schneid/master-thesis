@@ -15,6 +15,7 @@ class NonStructAwarePretrainingDataset(StructureAwareDataset):
 			'code_token_ids': sample['code_token_ids'],
 			'code_token_rel_pos_ids': sample['code_token_rel_pos_ids'],
 			'attn_code_tokens': sample['attn_code_tokens'],
+			'start_completion_idx': sample['start_completion_idx'],
 		}
 
 		code_tokens = sample['code_token_ids']

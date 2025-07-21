@@ -1,12 +1,12 @@
 import os
 
-from data_preprocessing.tasks.code_completion import CodeCompletion
+from data_preprocessing.tasks.eval.non_struct_aware_cc import NonStructAwareCC
 from data_preprocessing.datasets.code_search_net import CodeSearchNet
 from data_preprocessing.datasets.cornstack import CornStack
 from data_preprocessing.datasets.stack import Stack
-from structure_aware_customization.model.structure_aware_starcoder2_model import StructureAwareStarcoder2Model
-from structure_aware_customization.model.structure_aware_starcoder2_config import StructureAwareStarcoder2Config
-from structure_aware_customization.dataset.eval.structure_aware_eval_cc_dataset import StructureAwareEvalCCDataset
+from non_struct_aware.model.non_struct_aware_starcoder2_model import NonStructAwareStarcoder2Model
+from non_struct_aware.model.non_struct_aware_starcoder2_config import NonStructAwareStarcoder2Config
+from non_struct_aware.dataset.eval.non_struct_aware_eval_cc_dataset import NonStructAwareEvalCCDataset
 from structure_aware_customization.dataset.structure_aware_data_module import StructureAwareDataModule
 
 from megatron.core.optimizer import OptimizerConfig
@@ -20,13 +20,13 @@ from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 if __name__ == "__main__":
     user_path = "/shared/home/xxx"
 
-    task = CodeCompletion()
+    task = NonStructAwareCC()
     train_datasets = [Stack(task=task, split="train"), CodeSearchNet(task=task, split="train"), CornStack(task=task, split="train")]
     validation_datasets = [Stack(task=task, split="validation"), CodeSearchNet(task=task, split="validation"), CornStack(task=task, split="validation")]
     test_datasets = [Stack(task=task, split="test"), CodeSearchNet(task=task, split="test"), CornStack(task=task, split="test")]
-    train_ds = StructureAwareEvalCCDataset(datasets=train_datasets)
-    validation_ds = StructureAwareEvalCCDataset(datasets=validation_datasets)
-    test_ds = StructureAwareEvalCCDataset(datasets=test_datasets)
+    train_ds = NonStructAwareEvalCCDataset(datasets=train_datasets)
+    validation_ds = NonStructAwareEvalCCDataset(datasets=validation_datasets)
+    test_ds = NonStructAwareEvalCCDataset(datasets=test_datasets)
 
     global_batch_size = 1
     num_epochs = 3
@@ -43,8 +43,8 @@ if __name__ == "__main__":
         num_test_samples=test_ds.num_samples
     )
 
-    model = StructureAwareStarcoder2Model(
-        config=StructureAwareStarcoder2Config(),
+    model = NonStructAwareStarcoder2Model(
+        config=NonStructAwareStarcoder2Config(),
         task=task,
     )
 
