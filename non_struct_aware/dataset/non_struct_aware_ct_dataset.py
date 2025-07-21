@@ -68,3 +68,12 @@ class NonStructAwareCTDataset(StructureAwareDataset):
 
 	def build_attn_bias(self, batch_dict, first_col_matrix, second_col_matrix, third_col_matrix):
 		pass
+
+	def collate_fn(self, batch):
+		# Initialize a dictionary to store the batch data
+		batch_dict = {}
+		self.pad_within_batch(batch, batch_dict)
+		self.pad_batch_to_max_seq_len(batch_dict)
+		self.build_attn_mask(batch_dict)
+
+		return batch_dict
