@@ -1,6 +1,7 @@
 from data_preprocessing.tasks.task import Task
 
 import numpy as np
+import torch
 
 
 class CodeText(Task):
@@ -8,8 +9,55 @@ class CodeText(Task):
 	def __init__(self):
 		super().__init__(task='code_text')
 
+	def _decode_next_token(self, logits, batch_no_labels):
+		pred_tok_idx = batch_no_labels["loss_mask"].squeeze(0).nonzero(as_tuple=True)[0].item() # only one 1 in loss mask
+		pred_tok_id = logits[0, pred_tok_idx].argmax()
+		next_tok_idx = pred_tok_idx + 1
+
+		# update code tokens and loss mask for next iteration
+		update_code_tok_idx = self.max_seq_len - pred_tok_idx
+		batch_no_labels["text_token_ids"][0, -(update_code_tok_idx - 1)] = pred_tok_id
+		updated_text_tok_idx = batch_no_labels["text_token_ids"].size(1) - (update_code_tok_idx - 1)
+
+		batch_no_labels["loss_mask"].zero_()
+		batch_no_labels["loss_mask"][0, pred_tok_idx + 1] = 1
+
+		return pred_tok_id, updated_text_tok_idx, next_tok_idx
+
+	def _update_rel_pos_ids(self, batch_no_labels, updated_text_tok_idx):
+		max_rel_pos_updated_text_tok = updated_text_tok_idx + 1  # adjust for zero-pad token for rel pos
+		max_rel_pos = 127
+		if max_rel_pos_updated_text_tok > max_rel_pos:
+			clipped = torch.arange(max_rel_pos, 0, -1, device=batch_no_labels["text_token_rel_pos_ids"].device)
+			pad_len = max_rel_pos_updated_text_tok - max_rel_pos
+			padding = torch.full((pad_len,), max_rel_pos, device=batch_no_labels["text_token_rel_pos_ids"].device)
+			updated_text_tok_rel_pos_ids = torch.cat([padding, clipped])
+		else:
+			updated_text_tok_rel_pos_ids = torch.arange(max_rel_pos_updated_text_tok, 0, -1, device=batch_no_labels["text_token_rel_pos_ids"].device)
+
+		batch_no_labels["text_token_rel_pos_ids"][0, :max_rel_pos_updated_text_tok, updated_text_tok_idx] = updated_text_tok_rel_pos_ids
+		batch_no_labels["text_token_rel_pos_ids"][0, updated_text_tok_idx, :max_rel_pos_updated_text_tok] = updated_text_tok_rel_pos_ids
+
+	def _update_attention_bias(self, batch_no_labels, next_tok_idx):
+		attention_bias = batch_no_labels["attention_bias"]
+
+		# attend to all previous tokens (i.e. AST, DFG, code, text)
+		attention_bias[0, 0, next_tok_idx, :next_tok_idx + 1] = self.attn_bias_attend
+		# do not attend to future tokens (i.e. text)
+		attention_bias[0, 0, next_tok_idx, next_tok_idx + 1:] = self.attn_bias_ignore
+
+	def _reset_floats(self, batch_no_labels, batch):
+		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] > -1] = self.attn_bias_attend
+		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] <= -1] = self.attn_bias_ignore
+		batch_no_labels["ll_sims"] = batch["ll_sims"].clone()
+
 	def decode(self, logits, batch_no_labels, batch):
-		pass
+		pred_tok_id, updated_text_tok_idx, next_tok_idx = self._decode_next_token(logits, batch_no_labels)
+		self._update_rel_pos_ids(batch_no_labels, updated_text_tok_idx)
+		self._update_attention_bias(batch_no_labels, next_tok_idx)
+		self._reset_floats(batch_no_labels, batch)
+
+		return batch_no_labels, pred_tok_id
 
 	def get_cols(self):
 		return [
