@@ -19,6 +19,7 @@ class NonStructAwareCTDataset(StructureAwareDataset):
 			'attn_code_tokens': sample['attn_code_tokens'],
 			'attn_text_tokens': sample['attn_text_tokens'],
 			'attn_code_text': sample['attn_code_text'],
+			'attn_code_text_T': torch.full(sample['attn_code_text'].T.shape, fill_value=0)
 		}
 
 		text_tokens = sample['text_token_ids']
@@ -31,7 +32,7 @@ class NonStructAwareCTDataset(StructureAwareDataset):
 		return sample
 
 	def get_2d_tokens_for_max_seq_len_padding(self):
-		return ['attn_text_tokens', 'attn_code_text', 'text_token_rel_pos_ids']
+		return ['attn_text_tokens', 'attn_code_text', 'attn_code_text_T', 'text_token_rel_pos_ids']
 
 	def get_1d_tokens_for_max_seq_len_padding(self):
 		return super().get_1d_tokens_for_max_seq_len_padding() + ['text_token_ids']
@@ -40,7 +41,7 @@ class NonStructAwareCTDataset(StructureAwareDataset):
 		return ['code_token_ids', 'text_token_ids', 'labels', 'loss_mask']
 
 	def get_attn_keys(self):
-		return ['attn_code_tokens', 'attn_text_tokens', 'attn_code_text']
+		return ['attn_code_tokens', 'attn_text_tokens', 'attn_code_text', 'attn_code_text_T']
 
 	def get_labels_loss_pad_len(self, batch_dict):
 		return batch_dict['code_token_ids'][0].size(0)
@@ -50,10 +51,7 @@ class NonStructAwareCTDataset(StructureAwareDataset):
 		attn_code_tokens = batch_dict['attn_code_tokens']
 		attn_text_tokens = batch_dict['attn_text_tokens']
 		attn_code_text = batch_dict['attn_code_text']
-
-		# Compute transpose
-		attn_code_text_T_shape = attn_code_text.transpose(1, 2).shape
-		attn_code_text_T = torch.full(attn_code_text_T_shape, fill_value=0)
+		attn_code_text_T = batch_dict['attn_code_text_T']
 
 		# Build block matrices column-wise
 		first_col_matrix = torch.cat((attn_code_tokens, attn_code_text_T), dim=1)
