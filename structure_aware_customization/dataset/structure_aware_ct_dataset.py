@@ -11,6 +11,9 @@ class StructureAwareCTDataset(StructureAwareDataset):
 
 	def __getitem__(self, idx):
 		sample = super().__getitem__(idx)
+		sample['attn_code_text_T'] = torch.full(sample['attn_code_text'].T.shape, fill_value=0)
+		sample['attn_ast_text_T'] = torch.full(sample['attn_ast_text'].T.shape, fill_value=0)
+		sample['attn_dfg_text_T'] = torch.full(sample['attn_dfg_text'].T.shape, fill_value=0)
 
 		text_tokens = sample['text_token_ids']
 		labels = torch.cat([text_tokens[1:], torch.tensor([self.padding_value], dtype=text_tokens.dtype)])
@@ -22,7 +25,8 @@ class StructureAwareCTDataset(StructureAwareDataset):
 		return sample
 
 	def get_2d_tokens_for_max_seq_len_padding(self):
-		return ['attn_text_tokens', 'attn_code_text', 'attn_ast_text', 'attn_dfg_text', 'text_token_rel_pos_ids']
+		return ['attn_text_tokens', 'attn_code_text', 'attn_ast_text', 'attn_dfg_text', 'text_token_rel_pos_ids',
+				'attn_code_text_T', 'attn_ast_text_T', 'attn_dfg_text_T']
 
 	def get_1d_tokens_for_max_seq_len_padding(self):
 		return super().get_1d_tokens_for_max_seq_len_padding() + ['text_token_ids']
@@ -32,7 +36,8 @@ class StructureAwareCTDataset(StructureAwareDataset):
 
 	def get_attn_keys(self):
 		return ['attn_code_tokens', 'attn_text_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast',
-				'attn_code_dfg', 'attn_code_text', 'attn_ast_text', 'attn_dfg_text']
+				'attn_code_dfg', 'attn_code_text', 'attn_ast_text', 'attn_dfg_text',
+				'attn_code_text_T', 'attn_ast_text_T', 'attn_dfg_text_T']
 
 	def get_labels_loss_pad_len(self, batch_dict):
 		return batch_dict['dfg_node_mask'][0].size(0) + batch_dict['lr_paths_len'][0].size(0) + batch_dict['code_token_ids'][0].size(0)
@@ -41,18 +46,11 @@ class StructureAwareCTDataset(StructureAwareDataset):
 		# individual padded attention masks
 		attn_text_tokens = batch_dict['attn_text_tokens']
 		attn_code_text = batch_dict['attn_code_text']
+		attn_code_text_T = batch_dict['attn_code_text_T']
 		attn_ast_text = batch_dict['attn_ast_text']
+		attn_ast_text_T = batch_dict['attn_ast_text_T']
 		attn_dfg_text = batch_dict['attn_dfg_text']
-
-		# Compute transpose
-		attn_code_text_T_shape = attn_code_text.transpose(1, 2).shape
-		attn_code_text_T = torch.full(attn_code_text_T_shape, fill_value=0)
-
-		attn_ast_text_T_shape = attn_ast_text.transpose(1, 2).shape
-		attn_ast_text_T = torch.full(attn_ast_text_T_shape, fill_value=0)
-
-		attn_dfg_text_T_shape = attn_dfg_text.transpose(1, 2).shape
-		attn_dfg_text_T = torch.full(attn_dfg_text_T_shape, fill_value=0)
+		attn_dfg_text_T = batch_dict['attn_dfg_text_T']
 
 		# Build block matrices column-wise
 		first_col_matrix = torch.cat((first_col_matrix, attn_ast_text_T), dim=1)
