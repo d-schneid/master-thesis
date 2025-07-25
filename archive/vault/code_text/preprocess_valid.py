@@ -2,7 +2,7 @@ import os
 import json
 
 from data_preprocessing.data_handler import DataHandler
-from data_preprocessing.datasets.huawei import Huawei
+from data_preprocessing.datasets.vault import Vault
 from data_preprocessing.tasks.code_text import CodeText
 from data_preprocessing.scripts.preprocess_data import preprocess_data, store_global_stats
 
@@ -11,7 +11,7 @@ import h5py
 
 if __name__ == '__main__':
 	task = CodeText()
-	dataset = Huawei(task=task, split="test")
+	dataset = Vault(task=task, split="validation")
 	data = dataset.load_dataset()
 	data_handler = DataHandler(dataset=dataset, task=task)
 

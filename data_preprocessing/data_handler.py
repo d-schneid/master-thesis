@@ -111,7 +111,9 @@ class DataHandler:
 
 		for row in pbar:
 			code = row.code.strip().replace('▁', '_').replace('\r\n', '\n')  # step 1
+			text = row.text.strip().replace('▁', '_').replace('\r\n', '\n')
 			code = ''.join(filter(lambda c: c in tokenizer_chars, code))  # step 2
+			text = ''.join(filter(lambda c: c in tokenizer_chars, text))
 			try:
 				code = self.remove_comments_and_docstrings(code)  # step 3
 			except:
@@ -119,7 +121,13 @@ class DataHandler:
 				pbar.set_description('failed_count=' + str(failed_count))
 				continue
 
-			rows.append([row.text.strip(), code])
+			built_text = []
+			for text_row in text.split('\n'):
+				if text_row.strip() != "":
+					built_text.append(text_row)
+			text = '\n'.join(built_text)
+
+			rows.append([text, code])
 
 		data = pd.DataFrame(rows, columns=['text', 'code'])
 

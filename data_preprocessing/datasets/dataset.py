@@ -3,6 +3,8 @@ import os
 import json
 
 from tqdm import tqdm
+from langdetect import detect
+import langdetect.lang_detect_exception
 
 from data_preprocessing.tasks.task import Task
 
@@ -55,3 +57,18 @@ class Dataset(ABC):
 			rows.append([sample_col1, sample_col2])
 
 		return rows
+
+	def is_valid_docstring(self, docstring):
+		KEYWORDS = ["Args:", "Returns:", "Raises:", ":param", ":return", ":rtype", ":type", ":raises"]
+
+		if not any(keyword in docstring for keyword in KEYWORDS):
+			return False
+
+		try:
+			lang = detect(docstring)
+			if lang != "en":
+				return False
+		except langdetect.lang_detect_exception.LangDetectException:
+			return False
+
+		return True

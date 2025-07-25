@@ -57,10 +57,20 @@ class Huawei(Dataset):
 		return sample
 
 	def load_dataset(self):
-		num_train_samples = 1_200_000
-		num_test_samples = 80_000
-		num_valid_samples = 80_000
-		dataset = load_dataset(self.hf_dataset, split="train").select(range(num_train_samples)).filter(lambda x: not x['code'].lstrip().startswith("@"))
+		num_fst_train_samples = 8_000_000
+		num_snd_train_samples = 6_500_000
+		num_fst_valid_samples = 700_000
+		num_snd_valid_samples = 10_000
+		num_fst_test_samples = 700_000
+		num_snd_test_samples = 10_000
+		dataset = (
+			load_dataset(self.hf_dataset, split="train").
+			shuffle(seed=42).
+			select(range(num_fst_train_samples + num_snd_train_samples + num_fst_valid_samples + num_snd_valid_samples + num_fst_test_samples,
+						 num_fst_train_samples + num_snd_train_samples + num_fst_valid_samples + num_snd_valid_samples + num_fst_test_samples + num_snd_test_samples)).
+			filter(lambda x: not x['code'].lstrip().startswith("@")).
+			filter(lambda x: self.is_valid_docstring(x["docstring"]))
+		)
 		converted_dataset = [self.convert_code_string(sample) for sample in dataset]
 
 		return HFDataset.from_list(converted_dataset)
