@@ -65,11 +65,10 @@ class Huawei(Dataset):
 		num_snd_test_samples = 10_000
 		dataset = (
 			load_dataset(self.hf_dataset, split="train").
-			shuffle(seed=42).
-			select(range(num_fst_train_samples + num_snd_train_samples + num_fst_valid_samples + num_snd_valid_samples + num_fst_test_samples,
-						 num_fst_train_samples + num_snd_train_samples + num_fst_valid_samples + num_snd_valid_samples + num_fst_test_samples + num_snd_test_samples)).
-			filter(lambda x: not x['code'].lstrip().startswith("@")).
-			filter(lambda x: self.is_valid_docstring(x["docstring"]))
+			shuffle(seed=47).
+			select(range(num_fst_train_samples)).
+			filter(lambda x: not x['code'].lstrip().startswith("@"), num_proc=6).
+			filter(lambda x: self.is_valid_docstring(x["docstring"]), num_proc=6)
 		)
 		converted_dataset = [self.convert_code_string(sample) for sample in dataset]
 

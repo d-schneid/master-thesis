@@ -11,9 +11,17 @@ class StructureAwareCTDataset(StructureAwareDataset):
 
 	def __getitem__(self, idx):
 		sample = super().__getitem__(idx)
-		sample['attn_code_text_T'] = torch.full(sample['attn_code_text'].T.shape, fill_value=0)
-		sample['attn_ast_text_T'] = torch.full(sample['attn_ast_text'].T.shape, fill_value=0)
-		sample['attn_dfg_text_T'] = torch.full(sample['attn_dfg_text'].T.shape, fill_value=0)
+		sample['attn_code_text_T'] = torch.full(
+			sample['attn_code_text'].T.shape,
+			fill_value=self.data_handler.task.attn_bias_attend,
+			dtype=sample['attn_code_text'].dtype
+		)
+		sample['attn_ast_text_T'] = sample['attn_ast_text'].T.clone()
+		sample['attn_dfg_text_T'] = sample['attn_dfg_text'].T.clone()
+
+		attn_code_tokens = sample['attn_code_tokens']
+		upper_mask = torch.triu(torch.ones_like(attn_code_tokens), diagonal=1).bool()
+		attn_code_tokens[upper_mask] = self.data_handler.task.attn_bias_ignore
 
 		text_tokens = sample['text_token_ids']
 		labels = torch.cat([text_tokens[1:], torch.tensor([self.padding_value], dtype=text_tokens.dtype)])

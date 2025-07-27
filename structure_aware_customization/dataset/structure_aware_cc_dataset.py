@@ -12,19 +12,17 @@ class StructureAwareCCDataset(StructureAwarePretrainingDataset):
 		sample['loss_mask'][:start_completion_idx] = 0
 		del sample['start_completion_idx']
 
-		sample['attn_code_ast_all'] = sample['attn_code_ast'].clone()
-		sample['attn_code_ast_all'][start_completion_idx + 1 :] = 0
-
-		sample['attn_code_dfg_all'] = sample['attn_code_dfg'].clone()
-		sample['attn_code_dfg_all'][start_completion_idx + 1 :] = 0
+		attn_code_tokens = sample['attn_code_tokens']
+		upper_mask = torch.triu(torch.ones_like(attn_code_tokens), diagonal=1).bool()
+		attn_code_tokens[upper_mask] = self.data_handler.task.attn_bias_ignore
 
 		return sample
 
 	def get_2d_tokens_for_max_seq_len_padding(self):
-		return ['attn_code_tokens', 'attn_code_ast', 'attn_code_dfg', 'code_token_rel_pos_ids', 'attn_code_ast_all', 'attn_code_dfg_all']
+		return ['attn_code_tokens', 'attn_code_ast', 'attn_code_dfg', 'code_token_rel_pos_ids']
 
 	def get_attn_keys(self):
-		return ['attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_ast_all', 'attn_code_dfg', 'attn_code_dfg_all']
+		return ['attn_code_tokens', 'attn_ast_leaves', 'attn_dfg_edges', 'attn_code_ast', 'attn_code_dfg']
 
 	def build_attn_mask(self, batch_dict):
 		# individual padded attention masks
@@ -32,9 +30,7 @@ class StructureAwareCCDataset(StructureAwarePretrainingDataset):
 		attn_ast_leaves = batch_dict['attn_ast_leaves']
 		attn_dfg_edges = batch_dict['attn_dfg_edges']
 		attn_code_ast = batch_dict['attn_code_ast']
-		attn_code_ast_all = batch_dict['attn_code_ast_all']
 		attn_code_dfg = batch_dict['attn_code_dfg']
-		attn_code_dfg_all = batch_dict['attn_code_dfg_all']
 
 		# Compute transpose
 		attn_code_ast_T = attn_code_ast.transpose(1, 2)
@@ -46,8 +42,8 @@ class StructureAwareCCDataset(StructureAwarePretrainingDataset):
 		attn_ast_dfg_T = attn_ast_dfg.transpose(1, 2)
 
 		# Build block matrices column-wise
-		first_col_matrix = torch.cat((attn_ast_leaves, attn_ast_dfg_T, attn_code_ast_all), dim=1)
-		second_col_matrix = torch.cat((attn_ast_dfg, attn_dfg_edges, attn_code_dfg_all), dim=1)
+		first_col_matrix = torch.cat((attn_ast_leaves, attn_ast_dfg_T, attn_code_ast), dim=1)
+		second_col_matrix = torch.cat((attn_ast_dfg, attn_dfg_edges, attn_code_dfg), dim=1)
 		third_col_matrix = torch.cat((attn_code_ast_T, attn_code_dfg_T, attn_code_tokens), dim=1)
 
 		attn_bias = self.build_attn_bias(batch_dict, first_col_matrix, second_col_matrix, third_col_matrix)

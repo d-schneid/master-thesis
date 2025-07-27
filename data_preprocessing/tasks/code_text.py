@@ -76,10 +76,10 @@ class CodeText(Task):
 
 	def filter_max_seq_len(self, data):
 		data_filtered = data[
-			(data['code_tokens'].apply(len) <= 450) &
-			(data['lr_paths_len'].apply(len) <= 300) &
-			(data['text_tokens'].apply(len) <= 200) &
-			(data['dfg_node_mask'].apply(len) <= 100)
+			(data['code_tokens'].apply(len) <= 443) &
+			(data['lr_paths_len'].apply(len) <= 293) &
+			(data['text_tokens'].apply(len) <= 193) &
+			(data['dfg_node_mask'].apply(len) <= 93)
 			].reset_index(drop=True)
 
 		cols = self.get_max_seq_len_cols()

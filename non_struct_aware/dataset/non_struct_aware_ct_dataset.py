@@ -19,8 +19,16 @@ class NonStructAwareCTDataset(StructureAwareDataset):
 			'attn_code_tokens': sample['attn_code_tokens'],
 			'attn_text_tokens': sample['attn_text_tokens'],
 			'attn_code_text': sample['attn_code_text'],
-			'attn_code_text_T': torch.full(sample['attn_code_text'].T.shape, fill_value=0)
+			'attn_code_text_T': torch.full(
+				sample['attn_code_text'].T.shape,
+				fill_value=self.data_handler.task.attn_bias_attend,
+				dtype=sample['attn_code_text'].dtype
+			)
 		}
+
+		attn_code_tokens = sample['attn_code_tokens']
+		upper_mask = torch.triu(torch.ones_like(attn_code_tokens), diagonal=1).bool()
+		attn_code_tokens[upper_mask] = self.data_handler.task.attn_bias_ignore
 
 		text_tokens = sample['text_token_ids']
 		labels = torch.cat([text_tokens[1:], torch.tensor([self.padding_value], dtype=text_tokens.dtype)])
