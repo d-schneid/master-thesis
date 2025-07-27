@@ -91,6 +91,7 @@ if __name__ == "__main__":
             always_save_context=True,
             save_context_on_train_end=True,
             filename="structure_aware_starcoder2-{val_loss:.2f}-{step}-{consumed_samples}",
+            every_n_epochs=1
         ),
         extra_loggers=[
             SafeMLFlowLogger(
@@ -120,14 +121,14 @@ if __name__ == "__main__":
     optim = nl.MegatronOptimizerModule(
         config=OptimizerConfig(
             optimizer='adam',
-            lr=3e-5,
+            lr=4.3e-2,
             use_distributed_optimizer=True,
         ),
-        lr_scheduler=nl.lr_scheduler.CosineAnnealingScheduler(
+        lr_scheduler=nl.lr_scheduler.NoamAnnealingScheduler(
+            d_model=model.config.hidden_size,
             max_steps=(train_ds.num_samples * num_epochs) // global_batch_size,
             warmup_steps=1500,
-            constant_steps=5000,
-            min_lr=3e-6,
+            min_lr=2e-6,
         )
     )
 
