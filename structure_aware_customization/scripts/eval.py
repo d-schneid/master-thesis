@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     resume = nl.AutoResume(
         restore_config=RestoreConfig(
-            path=os.path.join(user_path, 'load_model/structure_aware_starcoder2_3b_nemo_checkpoint'),
+            path=os.path.join(user_path, 'path_finetuned_model'),
             load_model_state=True,
             load_optim_state=False,
             load_artifacts=False,

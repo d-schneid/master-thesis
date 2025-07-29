@@ -50,12 +50,12 @@ class CodeCompletion(Pretraining):
 		batch_no_labels["code_token_rel_pos_ids"][0, updated_code_tok_idx, :max_rel_pos_updated_code_tok] = updated_code_tok_rel_pos_ids
 
 	def _update_attention_bias(self, batch_no_labels, next_tok_idx):
+		num_code_tokens = batch_no_labels["code_token_ids"].shape[1]
 		attention_bias = batch_no_labels["attention_bias"]
+		attn_code_start_idx = attention_bias.shape[-1] - num_code_tokens
 
-		# attend to all previous tokens (i.e. AST, DFG, code)
-		attention_bias[0, 0, next_tok_idx, :next_tok_idx + 1] = self.attn_bias_attend
-		# do not attend to future tokens (i.e. code)
-		attention_bias[0, 0, next_tok_idx, next_tok_idx + 1:] = self.attn_bias_ignore
+		# only attend to previous code tokens and not AST/DFG tokens
+		attention_bias[0, 0, next_tok_idx, attn_code_start_idx:next_tok_idx + 1] = self.attn_bias_attend
 
 	def _reset_floats(self, batch_no_labels, batch):
 		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] > -1] = self.attn_bias_attend

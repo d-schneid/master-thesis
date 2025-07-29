@@ -14,10 +14,10 @@ class CodeText(Task):
 		pred_tok_id = logits[0, pred_tok_idx].argmax()
 		next_tok_idx = pred_tok_idx + 1
 
-		# update code tokens and loss mask for next iteration
-		update_code_tok_idx = self.max_seq_len - pred_tok_idx
-		batch_no_labels["text_token_ids"][0, -(update_code_tok_idx - 1)] = pred_tok_id
-		updated_text_tok_idx = batch_no_labels["text_token_ids"].size(1) - (update_code_tok_idx - 1)
+		# update text tokens and loss mask for next iteration
+		update_text_tok_idx = self.max_seq_len - pred_tok_idx
+		batch_no_labels["text_token_ids"][0, -(update_text_tok_idx - 1)] = pred_tok_id
+		updated_text_tok_idx = batch_no_labels["text_token_ids"].size(1) - (update_text_tok_idx - 1)
 
 		batch_no_labels["loss_mask"].zero_()
 		batch_no_labels["loss_mask"][0, pred_tok_idx + 1] = 1
@@ -39,12 +39,13 @@ class CodeText(Task):
 		batch_no_labels["text_token_rel_pos_ids"][0, updated_text_tok_idx, :max_rel_pos_updated_text_tok] = updated_text_tok_rel_pos_ids
 
 	def _update_attention_bias(self, batch_no_labels, next_tok_idx):
+		num_code_tokens = batch_no_labels["code_token_ids"].shape[1]
+		num_text_tokens = batch_no_labels["text_token_ids"].shape[1]
 		attention_bias = batch_no_labels["attention_bias"]
+		attn_code_start_idx = attention_bias.shape[-1] - num_text_tokens - num_code_tokens
 
-		# attend to all previous tokens (i.e. AST, DFG, code, text)
-		attention_bias[0, 0, next_tok_idx, :next_tok_idx + 1] = self.attn_bias_attend
-		# do not attend to future tokens (i.e. text)
-		attention_bias[0, 0, next_tok_idx, next_tok_idx + 1:] = self.attn_bias_ignore
+		# only attend to previous code/text tokens and not AST/DFG tokens
+		attention_bias[0, 0, next_tok_idx, attn_code_start_idx:next_tok_idx + 1] = self.attn_bias_attend
 
 	def _reset_floats(self, batch_no_labels, batch):
 		batch_no_labels["attention_bias"][batch_no_labels["attention_bias"] > -1] = self.attn_bias_attend

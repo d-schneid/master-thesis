@@ -82,7 +82,8 @@ class StructureAwareStarcoder2Model(Starcoder2Model):
 		# check for EOS token and max sequence length
 		while pred_tok_id != 0 and batch_no_labels['loss_mask'][0, -1] == 0:
 			logits = self.forward_step(batch_no_labels)
-			batch_no_labels, pred_tok_id = self.task.decode(logits, batch_no_labels, batch)
+			batch_no_labels, pred_tok_id_tensor = self.task.decode(logits, batch_no_labels, batch)
+			pred_tok_id = pred_tok_id_tensor.item()
 			pred_tok_ids.append(pred_tok_id)
 
 		gt_code = self.tokenizer.ids_to_text(gt_tok_ids.tolist(), remove_special_tokens=False)
