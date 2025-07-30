@@ -1,5 +1,6 @@
 import json
 from abc import ABC, abstractmethod
+from typing import Dict, Any
 
 from data_preprocessing.data_handler import DataHandler, PAD_TOK_ID_DFG
 from data_preprocessing.datasets.dataset import Dataset as AbstractDataset
@@ -47,8 +48,20 @@ class StructureAwareDataset(ABC, Dataset):
 		rng = np.random.default_rng(seed=42) # fixed seed for validation & test datasets
 		self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
 
-	def shuffle_data(self, seed):
-		rng = np.random.default_rng(seed=seed)
+	def state_dict(self) -> Dict[str, Any]:
+		return {
+			"shuffled_indices": self.shuffled_indices.tolist()
+		}
+
+	def load_state_dict(self, state_dict: Dict[str, Any]):
+		current_idx = state_dict['idx']
+		loaded_idxs = np.array(state_dict["shuffled_indices"], dtype=np.uint32)
+		unprocessed_idxs = loaded_idxs[current_idx:]
+		np.random.shuffle(loaded_idxs)
+		self.shuffled_indices = np.concatenate((unprocessed_idxs, loaded_idxs))
+
+	def shuffle_data(self, num_epoch):
+		rng = np.random.default_rng(seed=num_epoch)
 		self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
 
 	def load_h5_file(self, file_idx):
