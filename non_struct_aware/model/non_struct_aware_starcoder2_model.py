@@ -1,4 +1,4 @@
-from typing import Annotated, Callable, Optional, TYPE_CHECKING, Any
+from typing import Annotated, Callable, Optional, TYPE_CHECKING
 from pathlib import Path
 
 import torch

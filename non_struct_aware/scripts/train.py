@@ -20,6 +20,7 @@ from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenize
 from nemo.lightning.pytorch.strategies.utils import RestoreConfig
 
 from lightning.pytorch.loggers import MLFlowLogger
+from lightning.pytorch.callbacks.callback import Callback
 
 
 class SafeMLFlowLogger(MLFlowLogger):
@@ -28,6 +29,15 @@ class SafeMLFlowLogger(MLFlowLogger):
         if step is not None:
             step = int(step)
         super().log_metrics(metrics, step)
+
+
+class ShuffleDataCallback(Callback):
+
+    def __init__(self, train_ds):
+        self.train_ds = train_ds
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        self.train_ds.shuffle_data(seed=trainer.current_epoch)
 
 
 if __name__ == "__main__":
@@ -80,6 +90,7 @@ if __name__ == "__main__":
         plugins=nl.MegatronMixedPrecision(
             precision="bf16-mixed"
         ),
+        callbacks=ShuffleDataCallback(train_ds),
 	    log_every_n_steps=50,
         val_check_interval=500,
         limit_val_batches=0.6,

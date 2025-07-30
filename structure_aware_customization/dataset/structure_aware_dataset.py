@@ -19,14 +19,15 @@ class StructureAwareDataset(ABC, Dataset):
 		self.data_handler = DataHandler(dataset=datasets[0])
 		self.max_seq_len = datasets[0].task.max_seq_len
 		self.padding_value = self.data_handler.tokenizer.eos_token_id
+		self.h5_paths = []
 		self.h5_files = []
 		self.sample_idx_ranges = []
 		self.num_samples = 0
 
 		h5_metadata = [h5_metadata for ds in datasets for h5_metadata in ds.get_h5_metadata()]
 		for file_idx, (h5_path, h5_num_samples) in enumerate(h5_metadata):
-			h5_file_handle = h5py.File(h5_path, 'r')
-			self.h5_files.append(h5_file_handle)
+			self.h5_paths.append(h5_path)
+			self.h5_files.append(None)  # Placeholder for lazily loaded h5 file handles
 
 			start_idx = self.num_samples
 			end_idx = start_idx + h5_num_samples
@@ -43,8 +44,16 @@ class StructureAwareDataset(ABC, Dataset):
 			np.float32: torch.bfloat16,
 		}
 
-		rng = np.random.default_rng(seed=42)
+		rng = np.random.default_rng(seed=42) # fixed seed for validation & test datasets
 		self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
+
+	def shuffle_data(self, seed):
+		rng = np.random.default_rng(seed=seed)
+		self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
+
+	def load_h5_file(self, file_idx):
+		if self.h5_files[file_idx] is None:
+			self.h5_files[file_idx] = h5py.File(self.h5_paths[file_idx], 'r')
 
 	def __len__(self) -> int:
 		return self.num_samples
@@ -54,6 +63,8 @@ class StructureAwareDataset(ABC, Dataset):
 
 		for file_idx, start_idx, end_idx in self.sample_idx_ranges:
 			if start_idx <= idx < end_idx:
+				self.load_h5_file(file_idx)
+
 				file_sample_idx = idx - start_idx
 				key = f'sample_{file_sample_idx}'
 				group = self.h5_files[file_idx][key]

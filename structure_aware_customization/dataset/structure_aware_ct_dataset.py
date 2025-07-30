@@ -1,13 +1,9 @@
 from structure_aware_customization.dataset.structure_aware_dataset import StructureAwareDataset
-from data_preprocessing.datasets.dataset import Dataset
 
 import torch
 
 
 class StructureAwareCTDataset(StructureAwareDataset):
-
-	def __init__(self, datasets: list[Dataset]) -> None:
-		super().__init__(datasets=datasets)
 
 	def __getitem__(self, idx):
 		sample = super().__getitem__(idx)
