@@ -24,6 +24,7 @@ class StructureAwareDataset(ABC, Dataset):
 		self.h5_files = []
 		self.sample_idx_ranges = []
 		self.num_samples = 0
+		self.loaded = False
 
 		h5_metadata = [h5_metadata for ds in datasets for h5_metadata in ds.get_h5_metadata()]
 		for file_idx, (h5_path, h5_num_samples) in enumerate(h5_metadata):
@@ -59,10 +60,14 @@ class StructureAwareDataset(ABC, Dataset):
 		unprocessed_idxs = loaded_idxs[current_idx:]
 		np.random.shuffle(loaded_idxs)
 		self.shuffled_indices = np.concatenate((unprocessed_idxs, loaded_idxs))
+		self.loaded = True
 
 	def shuffle_data(self, num_epoch):
-		rng = np.random.default_rng(seed=num_epoch)
-		self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
+		if not self.loaded:
+			rng = np.random.default_rng(seed=num_epoch)
+			self.shuffled_indices = rng.permutation(self.num_samples).astype(np.uint32)
+		else:
+			self.loaded = False
 
 	def load_h5_file(self, file_idx):
 		if self.h5_files[file_idx] is None:
