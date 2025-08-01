@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from torch import nn
 from nltk.translate.bleu_score import corpus_bleu
+from codebleu import calc_codebleu
 
 from data_preprocessing.tasks.task import Task
 from non_struct_aware.model.non_struct_aware_starcoder2_config import NonStructAwareStarcoder2Config
@@ -66,10 +67,17 @@ class NonStructAwareStarcoder2Model(Starcoder2Model):
 		self.bleu_preds = []
 		self.bleu_refs = []
 
+		self.codebleu_preds = []
+		self.codebleu_refs = []
+
 	def validation_step(self, batch, batch_idx=None) -> torch.Tensor:
-		start_gt_idx = batch["loss_mask"].squeeze(0).nonzero(as_tuple=True)[0].item()
-		end_gt_idx = (batch["labels"].squeeze(0) != 0).nonzero(as_tuple=True)[0][-1].item() + 1  # include EOS token
-		ref_tok_ids = batch["labels"][0, start_gt_idx : end_gt_idx + 1]
+		gt_label_idxs = (batch["labels"].squeeze(0) != 0).nonzero(as_tuple=True)[0]
+		start_gt_idx = gt_label_idxs[0].item()
+		end_gt_idx = gt_label_idxs[-1].item() + 1  # include EOS token
+		gt_tok_ids = batch["labels"][0, start_gt_idx:end_gt_idx + 1]
+		start_ref_idx = batch["loss_mask"].squeeze(0).nonzero(as_tuple=True)[0].item()
+		ref_tok_ids = batch["labels"][0, start_ref_idx:end_gt_idx + 1]
+		prefix_gt_tok_ids = batch["labels"][0, start_gt_idx:start_ref_idx]
 
 		batch_no_labels = {k: v for k, v in batch.items() if k != 'labels'}
 		pred_tok_id = -1
@@ -83,15 +91,23 @@ class NonStructAwareStarcoder2Model(Starcoder2Model):
 
 		ref_toks = self.tokenizer.ids_to_tokens(ref_tok_ids.tolist())
 		pred_toks = self.tokenizer.ids_to_tokens(pred_tok_ids)
-
-		self.bleu_preds.append(pred_toks)
 		self.bleu_refs.append([ref_toks])
+		self.bleu_preds.append(pred_toks)
+
+		gt_code = self.tokenizer.ids_to_text(gt_tok_ids.tolist(), remove_special_tokens=True)
+		pred_code = self.tokenizer.ids_to_text(prefix_gt_tok_ids.tolist() + pred_tok_ids, remove_special_tokens=True)
+		self.codebleu_refs.append(gt_code)
+		self.codebleu_preds.append(pred_code)
 
 		return super().validation_step(batch, batch_idx)
 
 	def on_validation_end(self) -> None:
 		bleu_score = corpus_bleu(list_of_references=self.bleu_refs, hypotheses=self.bleu_preds)
 		print(f"BLEU Score: {bleu_score:.4f}")
+
+		codebleu_score = calc_codebleu(references=self.codebleu_refs, predictions=self.codebleu_preds, lang="python",
+									   tokenizer=self.tokenizer.text_to_tokens)
+		print(f"CodeBLEU Score: {codebleu_score['codebleu']:.4f}")
 
 
 @io.model_importer(NonStructAwareStarcoder2Model, "hf")
