@@ -29,17 +29,17 @@ if __name__ == "__main__":
     test_ds = NonStructAwareEvalCCDataset(datasets=test_datasets)
 
     global_batch_size = 1
-    num_epochs = 3
+    num_epochs = 1
 
     data = StructureAwareDataModule(
-        train_dataset=train_ds,
-        validation_dataset=validation_ds,
+        train_dataset=test_ds,
+        validation_dataset=test_ds,
         test_dataset=test_ds,
         micro_batch_size=1,
         global_batch_size=global_batch_size,
         seq_length=task.max_seq_len,
-        num_train_samples=train_ds.num_samples,
-        num_val_samples=validation_ds.num_samples,
+        num_train_samples=test_ds.num_samples,
+        num_val_samples=test_ds.num_samples,
         num_test_samples=test_ds.num_samples
     )
 
@@ -52,7 +52,7 @@ if __name__ == "__main__":
         num_nodes=1,
 	    devices=1,
         max_epochs=num_epochs,
-        max_steps=(train_ds.num_samples * num_epochs) // global_batch_size,
+        max_steps=(test_ds.num_samples * num_epochs) // global_batch_size,
         accelerator="gpu",
         strategy=nl.MegatronStrategy(
             tensor_model_parallel_size=1,
@@ -67,13 +67,13 @@ if __name__ == "__main__":
         ),
 	    log_every_n_steps=50,
         val_check_interval=500,
-        limit_val_batches=0.5,
+        limit_val_batches=100,
 	    accumulate_grad_batches=1,
     )
 
     log = nl.NeMoLogger(
         name="structure_aware_starcoder2",
-        log_dir=os.path.join(user_path, os.path.join(user_path, "testing/log_dir")),
+        log_dir=os.path.join(user_path, os.path.join(user_path, "")),
         ckpt=nl.ModelCheckpoint(
             save_last=True,
             monitor="val_loss",
@@ -102,7 +102,7 @@ if __name__ == "__main__":
             use_distributed_optimizer=True,
         ),
         lr_scheduler=nl.lr_scheduler.CosineAnnealingScheduler(
-            max_steps=(train_ds.num_samples * num_epochs) // global_batch_size,
+            max_steps=(test_ds.num_samples * num_epochs) // global_batch_size,
             warmup_steps=1500,
             constant_steps=5000,
             min_lr=3e-6,
