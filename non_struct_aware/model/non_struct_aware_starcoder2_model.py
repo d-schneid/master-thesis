@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 from torch import nn
+from nltk.translate.bleu_score import corpus_bleu
 
 from data_preprocessing.tasks.task import Task
 from non_struct_aware.model.non_struct_aware_starcoder2_config import NonStructAwareStarcoder2Config
@@ -61,10 +62,14 @@ class NonStructAwareStarcoder2Model(Starcoder2Model):
 
 		return output_tensor
 
+	def on_validation_start(self) -> None:
+		self.bleu_preds = []
+		self.bleu_refs = []
+
 	def validation_step(self, batch, batch_idx=None) -> torch.Tensor:
 		start_gt_idx = batch["loss_mask"].squeeze(0).nonzero(as_tuple=True)[0].item()
 		end_gt_idx = (batch["labels"].squeeze(0) != 0).nonzero(as_tuple=True)[0][-1].item() + 1  # include EOS token
-		gt_tok_ids = batch["labels"][0, start_gt_idx : end_gt_idx + 1]
+		ref_tok_ids = batch["labels"][0, start_gt_idx : end_gt_idx + 1]
 
 		batch_no_labels = {k: v for k, v in batch.items() if k != 'labels'}
 		pred_tok_id = -1
@@ -76,10 +81,17 @@ class NonStructAwareStarcoder2Model(Starcoder2Model):
 			pred_tok_id = pred_tok_id_tensor.item()
 			pred_tok_ids.append(pred_tok_id)
 
-		gt_code = self.tokenizer.ids_to_text(gt_tok_ids.tolist(), remove_special_tokens=False)
-		pred_code = self.tokenizer.ids_to_text(pred_tok_ids, remove_special_tokens=False)
+		ref_toks = self.tokenizer.ids_to_tokens(ref_tok_ids.tolist())
+		pred_toks = self.tokenizer.ids_to_tokens(pred_tok_ids)
+
+		self.bleu_preds.append(pred_toks)
+		self.bleu_refs.append([ref_toks])
 
 		return super().validation_step(batch, batch_idx)
+
+	def on_validation_end(self) -> None:
+		bleu_score = corpus_bleu(list_of_references=self.bleu_refs, hypotheses=self.bleu_preds)
+		print(f"BLEU Score: {bleu_score:.4f}")
 
 
 @io.model_importer(NonStructAwareStarcoder2Model, "hf")
